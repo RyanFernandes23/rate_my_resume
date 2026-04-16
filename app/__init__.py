@@ -1,1 +1,1 @@
-"""Rate My Resume - Backend"""
+# Rate My Resume Backend
