@@ -29,6 +29,12 @@ class UserResponse(BaseModel):
     name: Optional[str] = None
 
 
+class SupabaseTokenRequest(BaseModel):
+    user_id: str
+    email: str
+    name: Optional[str] = None
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -164,4 +170,30 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         id=current_user["id"],
         email=current_user.get("email", ""),
         name=current_user.get("name"),
+    )
+
+
+@router.post("/supabase-token", response_model=Token)
+async def get_token_for_supabase_user(request: SupabaseTokenRequest):
+    """
+    Exchange a Supabase-authenticated user for a backend JWT token.
+    This is called by the frontend after Google OAuth completes.
+    """
+    user_id = request.user_id
+    user_email = request.email
+    user_name = request.name
+
+    try:
+        user_resp = service_supabase.auth.admin.get_user_by_id(user_id)
+        if not user_resp.user:
+            raise HTTPException(status_code=404, detail="User not found")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    access_token = create_access_token({"sub": user_id, "email": user_email})
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(id=user_id, email=user_email, name=user_name),
     )

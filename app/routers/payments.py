@@ -18,7 +18,7 @@ CREDIT_PACKS = [
         "id": "single",
         "label": "Single Credit",
         "credits": 1,
-        "amount_inr": 20,
+        "amount_inr": 19,
         "best_value": False,
     },
     {
@@ -26,20 +26,13 @@ CREDIT_PACKS = [
         "label": "Starter Pack",
         "credits": 5,
         "amount_inr": 99,
-        "best_value": False,
+        "best_value": True,
     },
     {
         "id": "popular",
         "label": "Popular Pack",
         "credits": 10,
         "amount_inr": 199,
-        "best_value": True,
-    },
-    {
-        "id": "pro",
-        "label": "Pro Pack",
-        "credits": 30,
-        "amount_inr": 599,
         "best_value": False,
     },
 ]
