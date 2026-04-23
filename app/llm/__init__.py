@@ -1,0 +1,210 @@
+import time
+import json
+import logging
+from .schema import Resume
+from .client import llm
+
+_last_call_time = 0
+RATE_LIMIT_SECONDS = 0
+
+logger = logging.getLogger(__name__)
+
+
+def _wait_for_rate_limit():
+    global _last_call_time
+    elapsed = time.time() - _last_call_time
+    if elapsed < RATE_LIMIT_SECONDS:
+        time.sleep(RATE_LIMIT_SECONDS - elapsed)
+    _last_call_time = time.time()
+
+
+def _is_rate_limit_error(e: Exception) -> bool:
+    error_str = str(e).lower()
+    error_type = type(e).__name__.lower()
+    return (
+        "toomanyrequests" in error_str
+        or "toomanyrequests" in error_type
+        or "429" in error_str
+        or "rate limit" in error_str
+    )
+
+
+def _normalize_data(data: dict) -> dict:
+    fields_to_normalize = [
+        "skills",
+        "links",
+        "experience",
+        "education",
+        "projects",
+        "achievements",
+        "certifications",
+        "hobbies",
+        "extra_curricular",
+    ]
+
+    for field in fields_to_normalize:
+        if data.get(field) is None:
+            data[field] = []
+
+    # Handle professional_summary / summary mapping
+    if data.get("professional_summary") is None and data.get("summary"):
+        data["professional_summary"] = data.get("summary")
+    elif data.get("summary") is None and data.get("professional_summary"):
+        data["summary"] = data.get("professional_summary")
+
+    if data.get("total_years_experience") is None:
+        data["total_years_experience"] = None
+
+    if "experience" in data and data["experience"]:
+        for exp in data["experience"]:
+            if exp.get("descriptions") is None:
+                exp["descriptions"] = []
+
+    if "education" in data and data["education"]:
+        for edu in data["education"]:
+            if edu.get("score") is None:
+                edu["score"] = None
+            if edu.get("location") is None:
+                edu["location"] = None
+            if edu.get("start_date") is None:
+                edu["start_date"] = None
+            if edu.get("end_date") is None:
+                edu["end_date"] = None
+
+    if "projects" in data and data["projects"]:
+        for proj in data["projects"]:
+            if proj.get("descriptions") is None:
+                proj["descriptions"] = []
+            if proj.get("link") is None:
+                proj["link"] = None
+            if "technologies" in proj:
+                del proj["technologies"]
+            if "description" in proj:
+                del proj["description"]
+
+    if "achievements" in data and data["achievements"]:
+        for ach in data["achievements"]:
+            if ach.get("descriptions") is None:
+                ach["descriptions"] = []
+
+    if "certifications" in data and data["certifications"]:
+        for cert in data["certifications"]:
+            if cert.get("issuer") is None:
+                cert["issuer"] = None
+            if cert.get("date") is None:
+                cert["date"] = None
+            if cert.get("link") is None:
+                cert["link"] = None
+
+    return data
+
+
+SYSTEM_PROMPT = """You are a resume parser. Extract structured information from the provided resume markdown.
+
+Return a valid JSON object with these exact fields:
+- name (string or null)
+- email (string or null)
+- phone (string or null)
+- linkedin (string or null)
+- github (string or null)
+- location (string or null)
+- professional_summary (string or null) - Also known as career summary, career objective, about me, profile summary
+- summary (string or null) - Alias for professional_summary for backward compatibility
+- links (array of URL strings)
+- experience (array of objects with: company, title, start_date, end_date, descriptions)
+- total_years_experience (number or null)
+- education (array of objects with: name, score, start_date, end_date, location)
+- skills (array of strings)
+- projects (array of objects with: name, descriptions, link)
+- achievements (array of objects with: title, descriptions)
+- certifications (array of objects with: name, issuer, date, link)
+- hobbies (array of strings)
+- extra_curricular (array of strings)
+
+Field-by-field requirements:
+- name: full name as string
+- email: email address as string
+- phone: phone number as string
+- linkedin: full LinkedIn URL as string
+- github: full GitHub URL as string
+- location: city, state/country as string
+- summary: 2-3 sentence professional summary
+- links: array of any additional URLs found
+- experience[].company: company name
+- experience[].title: job title
+- experience[].start_date: start date (e.g., "July 2025" or "2025-07")
+- experience[].end_date: end date or "Present"
+- experience[].descriptions: ARRAY of strings, ONE string per bullet point
+- total_years_experience: calculate years from all experience entries (e.g., 2.5)
+- education[].name: institution/university name
+- education[].score: GPA, percentage, or grade (e.g., "8.5 CGPA", "75%")
+- education[].start_date: start year
+- education[].end_date: end year or "Present"
+- education[].location: city, state/country of institution
+- skills: ARRAY of strings, each skill as separate item
+- projects[].name: project title
+- projects[].descriptions: ARRAY of strings, ONE string per bullet point
+- projects[].link: project URL if available (can be null)
+- achievements[].title: achievement title or description
+- achievements[].descriptions: ARRAY of strings with details (can be empty if not available)
+- certifications[].name: certification name
+- certifications[].issuer: issuing organization (can be null if not available)
+- certifications[].date: date obtained (can be null if not available)
+- certifications[].link: URL to certification (can be null if not available)
+- hobbies: ARRAY of strings, list personal hobbies/interests (empty if not available)
+- extra_curricular: ARRAY of strings, volunteer work, clubs, activities (empty if not available)
+
+IMPORTANT:
+- For descriptions in experience and projects, each bullet point MUST be a separate string in the array
+- If achievements section not present in resume, use empty array []
+- If certifications section not present in resume, use empty array []
+- If hobbies or extra_curricular not present, use empty array []
+- If a field is not available, use null for strings and empty array [] for lists
+- Return ONLY valid JSON, no other text"""
+
+
+PROMPT_TEMPLATE = """{system_prompt}
+
+Resume:
+{resume}"""
+
+
+def extract_resume(markdown: str) -> Resume:
+    _wait_for_rate_limit()
+
+    prompt = PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, resume=markdown)
+
+    max_retries = 5
+    base_delay = 10
+
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(prompt)
+            json_str = response.content.strip()
+
+            json_str = json_str.strip()
+
+            if json_str.startswith("```json"):
+                json_str = json_str[7:]
+            elif json_str.startswith("```"):
+                json_str = json_str[3:]
+            if json_str.endswith("```"):
+                json_str = json_str[:-3]
+            json_str = json_str.strip()
+
+            data = json.loads(json_str)
+            data = _normalize_data(data)
+
+            return Resume(**data)
+
+        except Exception as e:
+            if _is_rate_limit_error(e) and attempt < max_retries - 1:
+                wait_time = base_delay * (2**attempt) * 2
+                logger.warning(f"Rate limited. Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+                continue
+            elif attempt < max_retries - 1:
+                wait_time = base_delay * (2**attempt)
+                time.sleep(wait_time)
+                continue
+            raise ValueError(f"Failed to extract resume: {str(e)}")
