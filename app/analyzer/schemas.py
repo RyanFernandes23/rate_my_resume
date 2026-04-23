@@ -31,18 +31,24 @@ class BasicInfoAnalysis(BaseModel):
     links: LinksAnalysis
 
 
+class BulletSuggestion(BaseModel):
+    bullet_index: int
+    original_bullet: str
+    suggestion: str
+
+
 class ExperienceAnalysis(BaseModel):
     entry_index: int
     entry_summary: str  # "Company - Role"
     bullet_count: int
-    bullet_length_avg: int
+    bullet_length_avg: float
     star_principle_score: float  # 0-10
     star_principle_reasoning: str
     has_quantifiable_metrics: bool
     metrics_count: int
     impact_score: float  # 0-10
     issues: List[AnalysisIssue] = Field(default_factory=list)
-    suggestions: List[str] = Field(default_factory=list)
+    suggestions: List[BulletSuggestion] = Field(default_factory=list)  # Structured suggestions
     good_things: List[str] = Field(default_factory=list)
     recommendation: str  # keep/revise/remove
     score: float  # /25
@@ -52,14 +58,14 @@ class ProjectsAnalysis(BaseModel):
     entry_index: int
     entry_name: str
     bullet_count: int
-    bullet_length_avg: int
+    bullet_length_avg: float
     star_principle_score: float  # 0-10
     star_principle_reasoning: str
     has_quantifiable_metrics: bool
     metrics_count: int
     impact_score: float  # 0-10
     issues: List[AnalysisIssue] = Field(default_factory=list)
-    suggestions: List[str] = Field(default_factory=list)
+    suggestions: List[BulletSuggestion] = Field(default_factory=list)  # Structured suggestions
     good_things: List[str] = Field(default_factory=list)
     recommendation: str  # keep/revise/remove
     score: float  # /15

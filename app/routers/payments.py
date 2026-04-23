@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from datetime import datetime
 import razorpay
@@ -73,13 +73,15 @@ async def create_order(
     user_id = current_user["id"]
 
     try:
+        print(f"[CREATE-ORDER] Creating order for user: {user_id}, pack: {request.pack_id}")
         order = razorpay_client.order.create(
             {
                 "amount": pack["amount_inr"] * 100,
                 "currency": "INR",
-                "receipt": f"order_{user_id}_{int(datetime.now().timestamp())}",
+                "receipt": f"{user_id[:8]}_{int(datetime.now().timestamp())}",
             }
         )
+        print(f"[CREATE-ORDER] Razorpay order created: {order['id']}")
 
         service_supabase.table("payment_orders").insert(
             {
@@ -90,6 +92,7 @@ async def create_order(
                 "status": "created",
             }
         ).execute()
+        print(f"[CREATE-ORDER] Order saved to Supabase")
 
         return CreateOrderResponse(
             order_id=order["id"],
@@ -98,6 +101,9 @@ async def create_order(
             key_id=settings.razorpay_key_id,
         )
     except Exception as e:
+        print(f"[CREATE-ORDER] ERROR: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -150,12 +156,8 @@ async def verify_payment(
         },
     ).execute()
 
-    if rpc_result.data:
-        new_balance = (
-            rpc_result.data[0].get("new_balance", 0)
-            if isinstance(rpc_result.data[0], dict)
-            else 0
-        )
+    if rpc_result.data and isinstance(rpc_result.data, dict):
+        new_balance = rpc_result.data.get("new_balance", 0)
     else:
         cred_resp = (
             service_supabase.table("user_credits")
@@ -173,3 +175,31 @@ async def verify_payment(
 @router.get("/packs")
 async def get_credit_packs():
     return CREDIT_PACKS
+
+
+@router.post("/webhook")
+async def razorpay_webhook(request: Request):
+    razorpay_signature = request.headers.get("X-Razorpay-Signature")
+    if not razorpay_signature:
+        raise HTTPException(status_code=400, detail="Missing signature header")
+
+    payload = await request.body()
+
+    generated_signature = hmac.new(
+        settings.razorpay_webhook_secret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(generated_signature, razorpay_signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    event = await request.json()
+    event_type = event.get("event")
+
+    if event_type == "payment_link.paid":
+        print(f"Payment succeeded for order {event['payload']['payment_link']['id']}")
+    elif event_type == "payment_link.failed":
+        print(f"Payment failed for order {event['payload']['payment_link']['id']}")
+
+    return {"status": "success"}

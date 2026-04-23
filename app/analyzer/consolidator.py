@@ -87,26 +87,26 @@ def consolidate_analysis(
     # Skills Score (out of 15) - already calculated
     skills_score = skills_analysis.score if skills_analysis else 0
 
-    # Education Score (out of 10) - be more lenient
+    # Education Score (out of 10) - penalize missing/missing details
     if education_analysis:
         edu_scores = [e.score for e in education_analysis]
         education_score = sum(edu_scores) / len(edu_scores)
     else:
-        education_score = 8.0  # Higher neutral - give benefit of doubt
+        education_score = 5.0  # STRICT: penalize missing education - not give benefit of doubt
 
-    # Achievements & Hobbies Score (out of 10) - be more lenient
+    # Achievements & Hobbies Score (out of 10) - penalize missing
     ach_hob_score = (
         achievements_hobbies_analysis.score
         if achievements_hobbies_analysis
-        else 7.0  # Higher neutral
+        else 5.0  # STRICT: penalize missing achievements
     )
 
-    # Certifications Score (out of 5) - be more lenient
+    # Certifications Score (out of 5) - penalize missing
     if certifications_analysis:
         cert_scores = [c.score for c in certifications_analysis]
         certifications_score = sum(cert_scores) / len(cert_scores)
     else:
-        certifications_score = 3.5  # Higher neutral - give benefit of doubt
+        certifications_score = 2.5  # STRICT: penalize missing certs - not give benefit of doubt
 
     # Job Role Fit Score - NOT scored, just suggestions
     # This is just job role suggestions, not a scored section

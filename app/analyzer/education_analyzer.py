@@ -89,19 +89,47 @@ Return a JSON array of analysis objects for each education entry."""
 
         analyses = json.loads(json_str)
 
-        # Convert to EducationAnalysis objects
+        # Convert to EducationAnalysis objects with actual scoring
         result = []
         for analysis in analyses:
             gpa_data = analysis.get("gpa_analysis", {})
-
+            
+            # Calculate actual score based on data completeness
+            edu = resume.education[analysis.get("entry_index", 0)] if analysis.get("entry_index", 0) < len(resume.education) else None
+            
+            # Scoring: institution (3pts) + dates (3pts) + gpa (2pts) + location (2pts)
+            score = 0.0
+            
+            # Institution valid: 3pts
+            if analysis.get("institution_name_valid", True):
+                score += 3.0
+            
+            # Has valid dates: 3pts
+            has_dates = edu and edu.start_date and edu.end_date
+            if has_dates and not analysis.get("date_issues"):
+                score += 3.0
+            
+            # Has GPA/score: 2pts
+            has_gpa = edu and edu.score
+            if has_gpa:
+                score += 2.0
+            
+            # Has location: 2pts
+            has_location = edu and edu.location
+            if has_location:
+                score += 2.0
+            
             result.append(
                 EducationAnalysis(
                     entry_index=analysis.get("entry_index", 0),
                     institution_name_valid=analysis.get("institution_name_valid", True),
                     institution_name=analysis.get("institution_name", ""),
+                    start_date=edu.start_date if edu else None,
+                    end_date=edu.end_date if edu else None,
+                    location=edu.location if edu else None,
                     date_issues=analysis.get("date_issues", []),
                     gpa_analysis=GpaAnalysis(
-                        value=gpa_data.get("value"),
+                        value=gpa_data.get("value") or edu.score,
                         recommendation=gpa_data.get("recommendation", "keep"),
                         reasoning=gpa_data.get("reasoning", ""),
                     ),
@@ -109,21 +137,43 @@ Return a JSON array of analysis objects for each education entry."""
                         AnalysisIssue(**issue) for issue in analysis.get("issues", [])
                     ],
                     suggestions=analysis.get("suggestions", []),
-                    score=analysis.get("score", 8.0),  # Default score out of 10
+                    score=round(score, 2),
                 )
             )
 
         return result
 
     except Exception as e:
-        # Fallback
+        # Fallback with stricter scoring
         result = []
         for i, edu in enumerate(resume.education):
+            # Calculate actual score based on data completeness
+            score = 0.0
+            
+            # Institution valid: 3pts
+            if edu.name:
+                score += 3.0
+            
+            # Has valid dates: 3pts
+            if edu.start_date and edu.end_date:
+                score += 3.0
+            
+            # Has GPA/score: 2pts
+            if edu.score:
+                score += 2.0
+            
+            # Has location: 2pts
+            if edu.location:
+                score += 2.0
+            
             result.append(
                 EducationAnalysis(
                     entry_index=i,
-                    institution_name_valid=True,
-                    institution_name=edu.name,
+                    institution_name_valid=bool(edu.name),
+                    institution_name=edu.name or "",
+                    start_date=edu.start_date,
+                    end_date=edu.end_date,
+                    location=edu.location,
                     date_issues=[],
                     gpa_analysis=GpaAnalysis(
                         value=edu.score,
@@ -138,7 +188,7 @@ Return a JSON array of analysis objects for each education entry."""
                         )
                     ],
                     suggestions=[],
-                    score=8.0,
+                    score=round(score, 2),
                 )
             )
         return result

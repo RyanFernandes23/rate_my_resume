@@ -7,6 +7,8 @@ import tempfile
 import os
 import logging
 import traceback
+import re
+import hashlib
 from datetime import datetime
 
 logging.basicConfig(
@@ -21,13 +23,14 @@ from app.llm import extract_resume
 from app.analyzer import analyze_resume
 from app.analyzer.schemas import ResumeAnalysis
 from app.llm.schema import Resume
-from app.routers import auth, credits, payments
+from app.routers import auth, credits, payments, history
 
 app = FastAPI(title="Rate My Resume API")
 
 app.include_router(auth.router)
 app.include_router(credits.router)
 app.include_router(payments.router)
+app.include_router(history.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,7 +70,7 @@ def deduct_user_credit(user_id: str, description: str = "Resume analysis") -> bo
             }
         ).execute()
         
-        if rpc_result.data and rpc_result.data[0].get("success", False):
+        if rpc_result.data and isinstance(rpc_result.data, dict) and rpc_result.data.get("success", False):
             logger.info(f"Credit deducted for user {user_id}")
             return True
         else:
@@ -147,29 +150,13 @@ def transform_to_frontend_format(
             "name": "Experience",
             "score": sb.experience_score,
             "max_score": 25,
-            "suggestions": list(
-                dict.fromkeys(
-                    [
-                        s
-                        for exp in (analysis.experience_analysis or [])
-                        for s in exp.suggestions
-                    ]
-                )
-            ),
+            "suggestions": [],  # Per-entry suggestions are now nested in experience_analysis
         },
         {
             "name": "Projects",
             "score": sb.projects_score,
             "max_score": 15,
-            "suggestions": list(
-                dict.fromkeys(
-                    [
-                        s
-                        for proj in (analysis.projects_analysis or [])
-                        for s in proj.suggestions
-                    ]
-                )
-            ),
+            "suggestions": [],  # Per-entry suggestions are now nested in projects_analysis
         },
         {
             "name": "Skills",
@@ -231,7 +218,14 @@ def transform_to_frontend_format(
                 "star_score": exp.star_principle_score,
                 "impact_score": exp.impact_score,
                 "recommendation": exp.recommendation,
-                "suggestions": exp.suggestions,
+                "suggestions": [
+                    {
+                        "bullet_index": s.bullet_index,
+                        "original_bullet": s.original_bullet,
+                        "suggestion": s.suggestion
+                    }
+                    for s in exp.suggestions
+                ],
                 "good_things": exp.good_things,
                 "score": exp.score,
             }
@@ -243,7 +237,14 @@ def transform_to_frontend_format(
                 "star_score": proj.star_principle_score,
                 "impact_score": proj.impact_score,
                 "recommendation": proj.recommendation,
-                "suggestions": proj.suggestions,
+                "suggestions": [
+                        {
+                            "bullet_index": s.bullet_index,
+                            "original_bullet": s.original_bullet,
+                            "suggestion": s.suggestion
+                        }
+                        for s in proj.suggestions
+                    ],
                 "good_things": proj.good_things,
                 "score": proj.score,
             }
@@ -390,7 +391,95 @@ async def analyze_resume_endpoint(
         result = transform_to_frontend_format(analysis, resume=resume, page_count=1)
         
         # ============================================================
-        # STEP 5: DEDUCT CREDIT (Only after successful analysis)
+        # STEP 5: EXTRACT ACTIONABLE SUGGESTIONS FOR BATCH REWRITE
+        # ============================================================
+        actionable_suggestions = []
+        for section in result.get('sections', []):
+            if section['name'] in ('Experience', 'Projects'):
+                section_key = section['name'].lower()
+                for entry_idx, entry in enumerate(result.get(f'{section_key}_analysis', [])):
+                    # Handle both structured (new) and string (legacy) formats
+                    for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
+                        if isinstance(sug_item, dict):
+                            # New structured format: {bullet_index, original_bullet, suggestion}
+                            actionable_suggestions.append({
+                                "section": section_key,
+                                "entry_index": entry_idx,
+                                "bullet_index": sug_item.get("bullet_index", bullet_idx),
+                                "bullet": sug_item.get("original_bullet", ""),
+                                "suggestion": sug_item.get("suggestion", "")
+                            })
+                        else:
+                            # Legacy string format - extract with regex
+                            match = re.search(r'["\'](.*?)["\']', str(sug_item))
+                            if match:
+                                original_bullet = match.group(1)
+                            else:
+                                original_bullet = str(sug_item)
+                            actionable_suggestions.append({
+                                "section": section_key,
+                                "entry_index": entry_idx,
+                                "bullet_index": bullet_idx,
+                                "bullet": original_bullet,
+                                "suggestion": str(sug_item)
+                            })
+        
+        if actionable_suggestions:
+            logger.info(f"Found {len(actionable_suggestions)} actionable suggestions to rewrite")
+            from app.analyzer.batch_rewriter import batch_rewrite_suggestions
+            rewrites = batch_rewrite_suggestions(actionable_suggestions)
+            
+            for sug in actionable_suggestions:
+                section_key = sug['section']
+                entry_idx = sug['entry_index']
+                bullet_idx = sug['bullet_index']
+
+                # Validate indices before accessing
+                section_analysis = result.get(f'{section_key}_analysis', [])
+                if entry_idx >= len(section_analysis):
+                    logger.warning(f"Skipping rewrite - entry_idx {entry_idx} out of range for {section_key}")
+                    continue
+                
+                entry_suggestions = section_analysis[entry_idx].get('suggestions', [])
+                if bullet_idx >= len(entry_suggestions):
+                    logger.warning(f"Skipping rewrite - bullet_idx {bullet_idx} out of range for entry {entry_idx}")
+                    continue
+                
+                # Enrich dict-formatted suggestions with rewrites (don't skip!)
+                if isinstance(entry_suggestions[bullet_idx], dict):
+                    entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(
+                        f"{section_key}__{entry_idx}__{bullet_idx}", []
+                    )
+                elif isinstance(entry_suggestions[bullet_idx], str):
+                    entry_suggestions[bullet_idx] = {
+                        "original_bullet": sug['bullet'],
+                        "suggestion": entry_suggestions[bullet_idx],
+                        "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
+                    }
+        
+        # ============================================================
+        # STEP 6: SAVE ANALYSIS TO SUPABASE
+        # ============================================================
+        analysis_id = None
+        if user_id:
+            try:
+                from app.db import service_supabase
+                insert_data = {
+                    "user_id": user_id,
+                    "file_name": file.filename,
+                    "target_tier": target_tier,
+                    "jd_hash": hashlib.md5(jd.encode()).hexdigest() if jd else None,
+                    "result_json": result
+                }
+                db_response = service_supabase.table("analyses").insert(insert_data).execute()
+                if db_response.data:
+                    analysis_id = db_response.data[0]["id"]
+                    logger.info(f"Analysis saved with id {analysis_id}")
+            except Exception as e:
+                logger.error(f"Failed to save analysis: {e}")
+        
+        # ============================================================
+        # STEP 7: DEDUCT CREDIT (Only after successful analysis)
         # ============================================================
         if user_id:
             success = deduct_user_credit(user_id, f"Resume analysis: {file.filename}")
@@ -407,7 +496,13 @@ async def analyze_resume_endpoint(
             f"{len(result.get('job_role_suggestions', []))} job suggestions"
         )
         
-        return JSONResponse(content=result)
+        result_for_frontend = {
+            "analysis_id": analysis_id,
+            "analysis_data": result,
+            "saved_to_history": bool(analysis_id)
+        }
+        
+        return JSONResponse(content=result_for_frontend)
     
     except HTTPException:
         # Re-raise HTTP exceptions (like 402) without modification
@@ -430,7 +525,7 @@ async def analyze_resume_endpoint(
         
         raise HTTPException(
             status_code=500, 
-            detail=f"Failed to analyze resume: {str(e)}"
+            detail="Failed to analyze resume. Please try again."
         )
     
     finally:

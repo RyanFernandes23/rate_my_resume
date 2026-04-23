@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str
     razorpay_key_id: str
     razorpay_key_secret: str
+    razorpay_webhook_secret: str
     secret_key: str
     frontend_url: str = "http://127.0.0.1:3000"
 

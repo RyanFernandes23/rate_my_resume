@@ -1,67 +1,30 @@
 import json
 from ..llm.client import llm
-from .schemas import ProjectsAnalysis, AnalysisIssue
+from .schemas import ProjectsAnalysis, AnalysisIssue, BulletSuggestion
 
 
-PROJECTS_ANALYZER_PROMPT = """You are a resume analysis expert with 10+ years of recruiting experience. You've screened thousands of resumes and know exactly what makes a candidate stand out.
+PROJECTS_ANALYZER_PROMPT = """You are a senior recruiter and resume strategist. For each bullet point below, provide exactly ONE actionable improvement suggestion.
 
-STAR Method Background:
-- S - Situation: What problem/need the project addresses
-- T - Task: Your specific role in the project
-- A - Action: What you built/implemented (technologies, approach)
-- R - Result: Outcome, impact, metrics
+Your suggestion must:
+- Be phrased as coaching advice, not a command.
+- Focus on the STAR framework: Situation, Task, Action, Result.
+- Identify what's missing for a recruiter: quantifiable impact, scale, problem solved, or technical depth.
+- If the bullet lacks metrics, suggest the exact TYPE of metric to add (e.g., "accuracy", "latency reduction", "throughput increase", "users served") and use placeholders like [X]%, [Y]k, [Z] users.
+- If the bullet already has a number, show how to make it more powerful by adding context.
+- Highlight the PROBLEM that was solved and why it mattered.
+- Mention any missing TECHNICAL DEPTH (e.g., frameworks, libraries, APIs, tools, optimizations).
+- Never invent absolute figures; always use placeholders [X], [Y], [Z] unless the bullet already contains them.
+- The suggestion should be crisp, at most 2 sentences, and end with a call to action like "Add this to demonstrate impact."
 
-Example of STAR in projects:
-"S (Situation): Users needed real-time answers from web data
-T (Task): Build a chatbot that searches live web data
-A (Action): Used Groq LLM, FastAPI, Chroma DB for semantic search
-R (Result): Created full-stack system with 95% accuracy"
+Example:
+Input bullet: "Developed a RAG Chatbot using Groq's LLM and FastAPI backend with ChromaDB for vector storage."
+Suggestion: "Add the impact: what accuracy or response time did this achieve? Mention the scale (e.g., [X] queries/day) and any technical wins like latency reduction or cost savings. Recruiters love seeing measurable results. Add a placeholder like 'achieving [Y]% accuracy and [Z]ms latency' to quantify the impact."
 
-Recruiter Perspective - What hiring managers look for in 6-10 seconds:
-1. TECHNICAL DEPTH: What technologies did you use? Show you know your stack
-2. PROBLEM-SOLVING: What challenge did you solve? Why does it matter?
-3. IMPACT: What was the outcome? Metrics, accuracy, users, performance gains
-4. BREVITY: Project descriptions should be concise, 2-4 bullet points
-5. SCANNABILITY: Can a recruiter quickly understand what you built?
-
-Analyze each project entry:
-
-1. Content Quality Score (0-10): STAR elements + technical depth
-   - 9-10: Excellent - Clear STAR with tech stack and outcomes
-   - 7-8: Good - Has STAR elements, some tech details
-   - 5-6: Average - Basic description
-   - 3-4: Needs Improvement - Vague
-   - 1-2: Poor - Very minimal
-
-2. Bullet Quality: 2-4 bullets per project
-3. Technical Depth: Technologies, frameworks, tools used
-4. Recruiter Scan Test: Would a recruiter understand your project in <10 seconds?
-
-For each project, return JSON:
-{
-    "entry_index": 0,
-    "entry_name": "Project Name",
-    "bullet_count": number,
-    "bullet_length_avg": number,
-    "star_principle_score": number (0-10),
-    "star_principle_reasoning": "explanation",
-    "has_quantifiable_metrics": true/false,
-    "metrics_count": number,
-    "impact_score": number (0-10),
-    "issues": [{"issue": "description", "severity": "high/medium/low", "reason": "explanation"}],
-    "suggestions": ["specific suggestion referencing actual content: 'Your description mentions X but recruiter wants to see Y'", "another specific suggestion"],
-    "good_things": ["what's already good about this project: specific strong points a recruiter would appreciate"],
-    "recommendation": "keep/revise/remove",
-    "score": number (out of 15)
-}
-
-IMPORTANT - Both suggestions AND good_things are required and MUST be specific:
-- Suggestions: What can be IMPROVED - be specific and contextual. NEVER use generic advice. INSTEAD, say "In your 'E-commerce App' project, the description of the 'payment gateway' lacks detail on the tech stack—mention if you used Stripe or PayPal".
-- Good Things: What's already GOOD - highlight strengths like clear tech stack, good problem-solution structure, impressive outcomes, technical depth. Be specific: "Your use of '95% accuracy' in the chatbot project is a strong, quantifiable result."
-
-Scoring: Well-documented projects with tech stack get HIGHER scores (10-14/15).
-EVERY SUGGESTION MUST REFERENCE ACTUAL TEXT FROM THE RESUME TO PROVE WE ANALYZED IT.
-GENERIC SUGGESTIONS WILL BE PENALIZED."""
+IMPORTANT:
+- Output MUST include the full original bullet text for each suggestion
+- Use placeholders like [X]% or [Y] for missing metrics—do NOT fabricate numbers
+- Sound like a professional resume coach: encouraging but direct
+- Return a JSON array of suggestions for ALL bullets across ALL projects"""
 
 
 def analyze_projects(resume) -> list[ProjectsAnalysis]:
@@ -70,14 +33,14 @@ def analyze_projects(resume) -> list[ProjectsAnalysis]:
     if not resume.projects:
         return []
 
-    # Build project data for LLM
+    # Build project data for LLM with numbered bullets
     proj_data = []
     for i, proj in enumerate(resume.projects):
         proj_data.append(
             {
-                "index": i,
+                "entry_index": i,  # Include entry_index for each project entry
                 "name": proj.name,
-                "descriptions": proj.descriptions,
+                "bullets": {idx: bullet for idx, bullet in enumerate(proj.descriptions or [])},
                 "link": proj.link,
             }
         )
@@ -87,7 +50,8 @@ def analyze_projects(resume) -> list[ProjectsAnalysis]:
 Projects Data:
 {json.dumps(proj_data, indent=2)}
 
-Return a JSON array of analysis objects for each project entry."""
+Return a JSON array. For each bullet that needs improvement, output one object with entry_index, bullet_index, original_bullet, and suggestion.
+If a bullet is already strong, you may skip it."""
 
     try:
         response = llm.invoke(prompt)
@@ -102,67 +66,105 @@ Return a JSON array of analysis objects for each project entry."""
             json_str = json_str[:-3]
         json_str = json_str.strip()
 
-        analyses = json.loads(json_str)
+        bullet_suggestions = json.loads(json_str)
 
-        # Convert to ProjectsAnalysis objects
+        # Convert to BulletSuggestion objects and group by entry_index
+        entry_suggestions = {}
+        for item in bullet_suggestions:
+            entry_idx = item.get("entry_index", 0)
+            if entry_idx not in entry_suggestions:
+                entry_suggestions[entry_idx] = []
+            entry_suggestions[entry_idx].append(BulletSuggestion(
+                bullet_index=item.get("bullet_index", 0),
+                original_bullet=item.get("original_bullet", ""),
+                suggestion=item.get("suggestion", "")
+            ))
+
+        # Build ProjectsAnalysis objects with actual scoring
         result = []
-        for analysis in analyses:
+        for i, proj in enumerate(resume.projects):
+            suggestions = entry_suggestions.get(i, [])
+            
+            # Calculate actual impact based on metrics presence
+            bullets = proj.descriptions or []
+            bullet_count = len(bullets)
+            metrics_found = sum(1 for b in bullets if "%" in b or any(c.isdigit() for c in b))
+            metric_ratio = metrics_found / max(bullet_count, 1)
+            
+            # Score based on: bullet count (4pts) + metrics (6pts) - total /15 
+            bullet_score = min(4.0, bullet_count * 1.0)
+            metric_score = min(6.0, metric_ratio * 6)
+            calculated_score = bullet_score + metric_score
+            
+            # Star principle score derived from metric presence
+            star_score = min(10.0, (metric_ratio * 8) + 2)
+            
+            # Determine recommendation based on score
+            recommendation = "keep" if calculated_score >= 7 else "revise"
+            
             result.append(
                 ProjectsAnalysis(
-                    entry_index=analysis.get("entry_index", 0),
-                    entry_name=analysis.get("entry_name", ""),
-                    bullet_count=analysis.get("bullet_count", 0),
-                    bullet_length_avg=analysis.get("bullet_length_avg", 0),
-                    star_principle_score=analysis.get("star_principle_score", 5.0),
-                    star_principle_reasoning=analysis.get(
-                        "star_principle_reasoning", ""
-                    ),
-                    has_quantifiable_metrics=analysis.get(
-                        "has_quantifiable_metrics", False
-                    ),
-                    metrics_count=analysis.get("metrics_count", 0),
-                    impact_score=analysis.get("impact_score", 5.0),
-                    issues=[
-                        AnalysisIssue(**issue) for issue in analysis.get("issues", [])
-                    ],
-                    suggestions=analysis.get("suggestions", []),
-                    good_things=analysis.get("good_things", []),
-                    recommendation=analysis.get("recommendation", "keep"),
-                    score=analysis.get("score", 7.5),
+                    entry_index=i,
+                    entry_name=proj.name or "Project",
+                    bullet_count=bullet_count,
+                    bullet_length_avg=int(sum(len(d) for d in bullets) / max(bullet_count, 1)),
+                    star_principle_score=round(star_score, 2),
+                    star_principle_reasoning=f"Found {metrics_found} metrics in {bullet_count} bullets" if metrics_found else "Add quantifiable metrics to improve score",
+                    has_quantifiable_metrics=metrics_found > 0,
+                    metrics_count=metrics_found,
+                    impact_score=round(calculated_score / 1.5, 2),
+                    issues=[],
+                    suggestions=suggestions,
+                    good_things=["Strong project with metrics" if metrics_found else "Project entry found" for _ in suggestions] if suggestions else ["Well-documented project" if bullets else "Consider adding project details"],
+                    recommendation=recommendation,
+                    score=round(calculated_score, 2),
                 )
             )
 
         return result
 
     except Exception as e:
-        # Fallback
+        # Fallback - but now with stricter scoring
         result = []
         for i, proj in enumerate(resume.projects):
+            suggestions = []
+            bullets = proj.descriptions or []
+            bullet_count = len(bullets)
+            
+            # Calculate metrics in fallback too
+            metrics_found = sum(1 for b in bullets if "%" in b or any(c.isdigit() for c in b))
+            metric_ratio = metrics_found / max(bullet_count, 1)
+            
+            # Lower scores in fallback
+            bullet_score = min(4.0, bullet_count * 1.0)
+            metric_score = min(6.0, metric_ratio * 6)
+            calculated_score = bullet_score + metric_score
+            
+            star_score = min(10.0, (metric_ratio * 8) + 2)
+            recommendation = "keep" if calculated_score >= 7 else "revise"
+            
+            for idx, bullet in enumerate(bullets):
+                suggestions.append(BulletSuggestion(
+                    bullet_index=idx,
+                    original_bullet=bullet,
+                    suggestion="Consider adding more specific metrics or tech stack details to strengthen this project description."
+                ))
             result.append(
                 ProjectsAnalysis(
                     entry_index=i,
-                    entry_name=proj.name,
-                    bullet_count=len(proj.descriptions) if proj.descriptions else 0,
-                    bullet_length_avg=int(
-                        sum(len(d) for d in (proj.descriptions or []))
-                        / max(len(proj.descriptions or []), 1)
-                    ),
-                    star_principle_score=5.0,
-                    star_principle_reasoning="Unable to analyze - LLM error",
-                    has_quantifiable_metrics=False,
-                    metrics_count=0,
-                    impact_score=5.0,
-                    issues=[
-                        AnalysisIssue(
-                            issue="Could not analyze project",
-                            severity="low",
-                            reason=str(e),
-                        )
-                    ],
-                    suggestions=["Review project descriptions for STAR format"],
+                    entry_name=proj.name or "Project",
+                    bullet_count=bullet_count,
+                    bullet_length_avg=int(sum(len(d) for d in bullets) / max(bullet_count, 1)),
+                    star_principle_score=round(star_score, 2),
+                    star_principle_reasoning=f"No LLM - found {metrics_found} metrics in fallback" if metrics_found else "Add metrics to improve score",
+                    has_quantifiable_metrics=metrics_found > 0,
+                    metrics_count=metrics_found,
+                    impact_score=round(calculated_score / 1.5, 2),
+                    issues=[AnalysisIssue(issue="Could not analyze project", severity="low", reason=str(e))],
+                    suggestions=suggestions,
                     good_things=["Has project entry with name clearly listed"],
-                    recommendation="keep",
-                    score=7.5,
+                    recommendation=recommendation,
+                    score=round(calculated_score, 2),
                 )
             )
         return result

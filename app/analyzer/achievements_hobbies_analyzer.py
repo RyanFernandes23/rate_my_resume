@@ -86,8 +86,10 @@ Return a JSON object with the analysis."""
 
         analysis = json.loads(json_str)
 
-        # Convert achievements
+        # Convert achievements with actual scoring
         ach_results = []
+        ach_count = len(analysis.get("achievements", []))
+        
         for ach in analysis.get("achievements", []):
             ach_results.append(
                 AchievementAnalysis(
@@ -100,8 +102,10 @@ Return a JSON object with the analysis."""
                 )
             )
 
-        # Convert hobbies
+        # Convert hobbies with actual scoring
         hobby_results = []
+        hobby_count = len(analysis.get("hobbies", []))
+        
         for hb in analysis.get("hobbies", []):
             hobby_results.append(
                 HobbyAnalysis(
@@ -111,24 +115,52 @@ Return a JSON object with the analysis."""
                 )
             )
 
+        # Calculate actual score based on what's present
+        # Achievements: 6pts (0.75pt each for up to 4)
+        ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
+        
+        # Hobbies: 4pts (1pt each for up to 4, but penalize if none)
+        if hobby_count == 0 and ach_count == 0:
+            # Both missing - very strict - low score
+            hobby_score = 2.0
+        else:
+            hobby_score = min(4.0, hobby_count * 1.0)
+        
+        calculated_score = ach_score + hobby_score
+
         return AchievementsHobbiesAnalysis(
             achievements=ach_results,
             hobbies=hobby_results,
             suggestions=analysis.get("suggestions", []),
-            score=analysis.get("score", 5.0),
+            score=round(calculated_score, 2),
         )
 
     except Exception as e:
-        # Fallback
+        # Fallback with stricter scoring
+        # Calculate actual scores based on what's present
+        ach_count = len(achievements)
+        hobby_count = len(all_hobbies)
+        
+        # Achievements: 6pts (0.75pt each for up to 4)
+        ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
+        
+        # Hobbies: 4pts (1pt each for up to 4, but penalize if none)
+        if hobby_count == 0 and ach_count == 0:
+            hobby_score = 2.0  # Both missing - strict
+        else:
+            hobby_score = min(4.0, hobby_count * 1.0)
+        
+        calculated_score = ach_score + hobby_score
+        
         return AchievementsHobbiesAnalysis(
             achievements=[
                 AchievementAnalysis(
                     index=i,
                     title=a.title,
-                    impact_score=5.0,
+                    impact_score=min(10.0, (i + 1) * 2.5),  # Sequential scoring
                     recommendation="keep",
-                    reasoning="Unable to analyze",
-                    issues=["Could not analyze"],
+                    reasoning="Unable to analyze - based on available data",
+                    issues=["Could not analyze - LLM error"],
                 )
                 for i, a in enumerate(achievements)
             ],
@@ -136,5 +168,5 @@ Return a JSON object with the analysis."""
                 HobbyAnalysis(hobby=h, is_professional=False, suggestions=[])
                 for h in all_hobbies
             ],
-            score=5.0,
+            score=round(calculated_score, 2),
         )

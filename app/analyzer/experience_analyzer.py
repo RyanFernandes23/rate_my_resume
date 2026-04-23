@@ -1,69 +1,30 @@
 import json
 from ..llm.client import llm
-from .schemas import ExperienceAnalysis, AnalysisIssue
+from .schemas import ExperienceAnalysis, AnalysisIssue, BulletSuggestion
 
 
-EXPERIENCE_ANALYZER_PROMPT = """You are a resume analysis expert with 10+ years of recruiting experience. You've screened thousands of resumes and know exactly what makes a candidate stand out.
+EXPERIENCE_ANALYZER_PROMPT = """You are a senior recruiter and resume strategist. For each bullet point below, provide exactly ONE actionable improvement suggestion.
 
-STAR Method Background:
-- S - Situation: The context or background of your experience
-- T - Task: Your specific responsibility or challenge
-- A - Action: What you did specifically (use strong action verbs)
-- R - Result: The outcome - quantify with numbers, percentages, impact
+Your suggestion must:
+- Be phrased as coaching advice, not a command.
+- Focus on the STAR framework: Situation, Task, Action, Result.
+- Identify what's missing for a recruiter: quantifiable impact, scale, problem solved, or technical depth.
+- If the bullet lacks metrics, suggest the exact TYPE of metric to add (e.g., "time saved", "accuracy gain vs. baseline", "throughput increase", "cost reduction") and use placeholders like [X]%, [Y]k, [Z] GPUs.
+- If the bullet already has a number, show how to make it more powerful by adding context.
+- Highlight the PROBLEM that was solved and why it mattered.
+- Mention any missing TECHNICAL DEPTH (e.g., frameworks, tools, optimizations, scale).
+- Never invent absolute figures; always use placeholders [X], [Y], [Z] unless the bullet already contains them.
+- The suggestion should be crisp, at most 2 sentences, and end with a call to action like "Add this to demonstrate impact."
 
-Example of STAR format:
-"S (Situation): Built an AI agent for 90,000+ users on the Aatmunn platform
-T (Task): Enable natural language navigation across 55 screens
-A (Action): Architected microservices with FastAPI, built RAG engine using pgvector
-R (Result): Enabled automatic task execution, improved user engagement by X%"
+Example:
+Input bullet: "Developed key components: patch embedding, positional encoding, multi-head self-attention, and transformer encoder blocks without relying on external ViT libraries."
+Suggestion: "Show the impact of building from scratch: did this achieve [X]% higher throughput or [Y]% accuracy versus using a library? Mention if it solved a deployment constraint (e.g., lightweight runtime) and any technical depth like memory optimizations. Add a placeholder like 'achieved [X]% throughput increase on [Y] GPUs' to quantify the result."
 
-Recruiter Perspective - What hiring managers look for in 6-10 seconds:
-1. IMPACT: Can you show measurable results? Recruiters skip vague duties.
-2. ACTION VERBS: Strong, specific verbs (built, led, architected, reduced, increased)
-3. QUANTIFIABLE METRICS: Numbers, %, $, time saved, users affected
-4. BREVITY: Bullet points should be 1-2 lines max, ~15-30 words each
-5. RELEVANCE: Does this align with the job requirements?
-6. SCANNABILITY: Use bullet points, not paragraphs
-
-For each experience entry, evaluate:
-1. Content Quality Score (0-10): Does it have clear S-T-A-R elements?
-   - 9-10: Excellent - Clear STAR with quantified results
-   - 7-8: Good - Has STAR elements, some results
-   - 5-6: Average - Some STAR, not fully structured
-   - 3-4: Needs Improvement - Vague, no clear results
-   - 1-2: Poor - Duty-only, no results
-
-2. Bullet Quality: 3-5 bullets optimal, each 1-2 lines (15-30 words)
-3. Metrics: Look for numbers, %, $, improvements
-4. Recruiter Scan Test: Would a recruiter understand your impact in <10 seconds?
-
-For each experience entry, return JSON:
-{
-    "entry_index": 0,
-    "entry_summary": "Company - Role",
-    "bullet_count": number,
-    "bullet_length_avg": average characters,
-    "star_principle_score": number (0-10),
-    "star_principle_reasoning": "explanation of STAR usage quality",
-    "has_quantifiable_metrics": true/false,
-    "metrics_count": number,
-    "impact_score": number (0-10),
-    "issues": [{"issue": "description", "severity": "high/medium/low", "reason": "explanation"}],
-    "suggestions": ["specific suggestion referencing actual content: 'You wrote X but recruiter needs Y'", "another specific suggestion"],
-    "good_things": ["what's already good about this entry: specific strong points a recruiter would appreciate"],
-    "recommendation": "keep/revise/remove",
-    "score": number (out of 25)
-}
-
-IMPORTANT - Both suggestions AND good_things are required and MUST be specific:
-- Suggestions: What can be IMPROVED - be specific and contextual. NEVER use generic advice like "Add metrics". INSTEAD, say "In your 'Software Engineer' role, the bullet about 'improving API speed' is missing a specific metric like 'reduced latency by 40%'".
-- Good Things: What's already GOOD - highlight strengths like clear action verbs, specific metrics, good structure, relevant achievements. Be specific: "Your use of 'Architected' in the AWS project clearly conveys technical leadership."
-
-Scoring: Good content with results/metrics = HIGHER scores (15-22/25).
-Only give low scores (<10) for vague, duty-only descriptions.
-EVERY SUGGESTION MUST REFERENCE ACTUAL TEXT FROM THE RESUME TO PROVE WE ANALYZED IT.
-NO GENERIC ADVICE: Never say "Add metrics" or "Use STAR". Instead, say "You mentioned 'Built an API', but recruiters want to see 'Built a Python API handling 5k requests/sec' to understand scale."
-IF AN ENTRY IS GOOD: Don't force a suggestion; but ensure the 'good_things' explain WHY it's good from a recruiter's POV."""
+IMPORTANT:
+- Output MUST include the full original bullet text for each suggestion
+- Use placeholders like [X]% or [Y] for missing metrics—do NOT fabricate numbers
+- Sound like a professional resume coach: encouraging but direct
+- Return a JSON array of suggestions for ALL bullets across ALL entries"""
 
 
 def analyze_experience(resume) -> list[ExperienceAnalysis]:
@@ -72,17 +33,17 @@ def analyze_experience(resume) -> list[ExperienceAnalysis]:
     if not resume.experience:
         return []
 
-    # Build experience data for LLM
+    # Build experience data for LLM with numbered bullets
     exp_data = []
     for i, exp in enumerate(resume.experience):
         exp_data.append(
             {
-                "index": i,
+                "entry_index": i,  # Include entry_index for each experience entry
                 "company": exp.company,
                 "title": exp.title,
                 "start_date": exp.start_date,
                 "end_date": exp.end_date,
-                "descriptions": exp.descriptions,
+                "bullets": {idx: bullet for idx, bullet in enumerate(exp.descriptions or [])},
             }
         )
 
@@ -91,7 +52,8 @@ def analyze_experience(resume) -> list[ExperienceAnalysis]:
 Experience Data:
 {json.dumps(exp_data, indent=2)}
 
-Return a JSON array of analysis objects for each experience entry."""
+Return a JSON array. For each bullet that needs improvement, output one object with entry_index, bullet_index, original_bullet, and suggestion.
+If a bullet is already strong, you may skip it."""
 
     try:
         response = llm.invoke(prompt)
@@ -106,34 +68,58 @@ Return a JSON array of analysis objects for each experience entry."""
             json_str = json_str[:-3]
         json_str = json_str.strip()
 
-        analyses = json.loads(json_str)
+        bullet_suggestions = json.loads(json_str)
 
-        # Convert to ExperienceAnalysis objects
+        # Convert to BulletSuggestion objects and group by entry_index
+        entry_suggestions = {}  # entry_index -> list of BulletSuggestion
+        for item in bullet_suggestions:
+            entry_idx = item.get("entry_index", 0)
+            if entry_idx not in entry_suggestions:
+                entry_suggestions[entry_idx] = []
+            entry_suggestions[entry_idx].append(BulletSuggestion(
+                bullet_index=item.get("bullet_index", 0),
+                original_bullet=item.get("original_bullet", ""),
+                suggestion=item.get("suggestion", "")
+            ))
+
+# Build ExperienceAnalysis objects with actual scoring
         result = []
-        for analysis in analyses:
-            # Handle missing fields with defaults
+        for i, exp in enumerate(resume.experience):
+            suggestions = entry_suggestions.get(i, [])
+            
+            # Calculate actual impact based on metrics presence
+            bullets = exp.descriptions or []
+            bullet_count = len(bullets)
+            metrics_found = sum(1 for b in bullets if "%" in b or any(c.isdigit() for c in b))
+            metric_ratio = metrics_found / max(bullet_count, 1)
+            
+            # Score based on: bullet count (5pts) + metrics (10pts)
+            bullet_score = min(5.0, bullet_count * 1.5)
+            metric_score = min(10.0, metric_ratio * 10)
+            calculated_score = bullet_score + metric_score
+            
+            # Star principle score derived from metric presence
+            star_score = min(10.0, (metric_ratio * 8) + 3)
+            
+            # Determine recommendation based on score
+            recommendation = "keep" if calculated_score >= 12 else "revise"
+            
             result.append(
                 ExperienceAnalysis(
-                    entry_index=analysis.get("entry_index", 0),
-                    entry_summary=analysis.get("entry_summary", ""),
-                    bullet_count=analysis.get("bullet_count", 0),
-                    bullet_length_avg=analysis.get("bullet_length_avg", 0),
-                    star_principle_score=analysis.get("star_principle_score", 5.0),
-                    star_principle_reasoning=analysis.get(
-                        "star_principle_reasoning", ""
-                    ),
-                    has_quantifiable_metrics=analysis.get(
-                        "has_quantifiable_metrics", False
-                    ),
-                    metrics_count=analysis.get("metrics_count", 0),
-                    impact_score=analysis.get("impact_score", 5.0),
-                    issues=[
-                        AnalysisIssue(**issue) for issue in analysis.get("issues", [])
-                    ],
-                    suggestions=analysis.get("suggestions", []),
-                    good_things=analysis.get("good_things", []),
-                    recommendation=analysis.get("recommendation", "keep"),
-                    score=analysis.get("score", 10.0),
+                    entry_index=i,
+                    entry_summary=f"{exp.company} - {exp.title}" if exp.company else "Experience",
+                    bullet_count=bullet_count,
+                    bullet_length_avg=int(sum(len(d) for d in bullets) / max(bullet_count, 1)),
+                    star_principle_score=round(star_score, 2),
+                    star_principle_reasoning=f"Found {metrics_found} metrics in {bullet_count} bullets" if metrics_found else "Add quantifiable metrics to improve score",
+                    has_quantifiable_metrics=metrics_found > 0,
+                    metrics_count=metrics_found,
+                    impact_score=round(calculated_score / 1.5, 2),
+                    issues=[],
+                    suggestions=suggestions,
+                    good_things=["Strong entry with metrics" if metrics_found else "Entry found" for _ in suggestions] if suggestions else ["Strong entry" if bullets else "No descriptions found"],
+                    recommendation=recommendation,
+                    score=round(calculated_score, 2),
                 )
             )
 
@@ -141,39 +127,61 @@ Return a JSON array of analysis objects for each experience entry."""
 
     except Exception as e:
         print(f"Experience analysis fallback triggered: {e}")
-        # Fallback: return basic analysis for each experience
         result = []
         for i, exp in enumerate(resume.experience):
             bullets = exp.descriptions or []
             bullet_count = len(bullets)
             
-            # Heuristic suggestions
+            # Calculate actual metrics in fallback too
+            metrics_found = sum(1 for b in bullets if "%" in b or any(c.isdigit() for c in b))
+            metric_ratio = metrics_found / max(bullet_count, 1)
+            
+            # Lower scores in fallback - we're being strict now
+            bullet_score = min(5.0, bullet_count * 1.5)
+            metric_score = min(10.0, metric_ratio * 10)
+            calculated_score = bullet_score + metric_score
+            
+            star_score = min(10.0, (metric_ratio * 8) + 3)
+            recommendation = "keep" if calculated_score >= 12 else "revise"
+            
+            # Build suggestions
             fallback_suggestions = []
-            if bullet_count < 3:
-                fallback_suggestions.append(f"In your role at {exp.company}, you only have {bullet_count} bullets. Aim for 3-5 to fully showcase your impact.")
-            
-            if not any("%" in b or any(c.isdigit() for c in b) for b in bullets):
-                fallback_suggestions.append(f"The description for {exp.title} lacks metrics. Try adding growth percentages or user counts (e.g., 'improved throughput by 20%').")
-            
+            for idx, bullet in enumerate(bullets):
+                if bullet_count < 3:
+                    sug_text = f"In your role at {exp.company}, you only have {bullet_count} bullets. Aim for 3-5 to fully showcase your impact."
+                elif not any("%" in b or any(c.isdigit() for c in b) for b in bullets):
+                    sug_text = f"The description for {exp.title} lacks metrics. Try adding growth percentages (e.g., 'improved throughput by [X]%')."
+                else:
+                    sug_text = "Focus on specific achievements rather than just listing duties."
+                fallback_suggestions.append(BulletSuggestion(
+                    bullet_index=idx,
+                    original_bullet=bullet,
+                    suggestion=sug_text
+                ))
             if not fallback_suggestions:
-                fallback_suggestions = ["Focus on specific achievements rather than just listing duties."]
-
+                fallback_suggestions = [BulletSuggestion(
+                    bullet_index=0,
+                    original_bullet=bullets[0] if bullets else "",
+                    suggestion="Consider adding more specific metrics to your descriptions."
+                )]
             result.append(
                 ExperienceAnalysis(
                     entry_index=i,
                     entry_summary=f"{exp.company} - {exp.title}",
                     bullet_count=bullet_count,
                     bullet_length_avg=int(sum(len(d) for d in bullets) / max(bullet_count, 1)),
-                    star_principle_score=5.0,
-                    star_principle_reasoning="Unable to perform deep LLM analysis - using heuristic fallback.",
-                    has_quantifiable_metrics=False,
-                    metrics_count=0,
-                    impact_score=5.0,
-                    issues=[AnalysisIssue(issue="Analyzer connection glitch", severity="low", reason="Falling back to simple heuristics")],
+                    star_principle_score=round(star_score, 2),
+                    star_principle_reasoning=f"No LLM analysis - found {metrics_found} metrics in fallback" if metrics_found else "Add metrics to improve score",
+                    has_quantifiable_metrics=metrics_found > 0,
+                    metrics_count=metrics_found,
+                    impact_score=round(calculated_score / 1.5, 2),
+                    issues=[AnalysisIssue(issue="Analyzer glitch", severity="low", reason="Falling back to simple heuristics")],
                     suggestions=fallback_suggestions,
                     good_things=[f"Professional entry for {exp.title} detected"],
-                    recommendation="keep",
-                    score=10.0,
+                    recommendation=recommendation,
+                    score=round(calculated_score, 2),
                 )
             )
         return result
+
+
