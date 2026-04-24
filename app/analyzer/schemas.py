@@ -34,7 +34,8 @@ class BasicInfoAnalysis(BaseModel):
 class BulletSuggestion(BaseModel):
     bullet_index: int
     original_bullet: str
-    suggestion: str
+    context: Optional[str] = None  # STAR framing context (optional)
+    suggestion: str  # Actionable tip
 
 
 class ExperienceAnalysis(BaseModel):

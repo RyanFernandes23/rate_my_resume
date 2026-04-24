@@ -12,12 +12,16 @@ Recruiter Perspective on Education:
 4. GPAs MATTER LESS: After 2+ years, work experience outweighs GPA
 5. LOCATION: Recruiters may prefer local candidates
 
+You also have access to total_years_experience - use this to personalize suggestions:
+- If total_years_experience >= 2: Suggest condensing education (university name + dates only)
+- If total_years_experience < 2: Suggest keeping degree + expected graduation + major details
+
 Analyze each education entry:
 1. Check if institution name is valid and properly formatted
 2. Validate dates (start should be before end, should be recent)
 3. Evaluate GPA/score - determine if it should be kept or removed
 4. Check for location information
-5. Consider: Is this relevant for the candidate's career stage?
+5. Apply experience-based logic to suggestions
 
 For each education entry, return a JSON object with:
 {
@@ -31,7 +35,9 @@ For each education entry, return a JSON object with:
         "reasoning": "explanation"
     },
     "issues": [{"issue": "description", "severity": "high/medium/low", "reason": "explanation"}],
-    "suggestions": ["specific recruiter-focused suggestion referencing actual content"]
+    "suggestions": ["ONE context-aware suggestion based on total_years_experience:
+        - If >=2 years: keep only the collapse/condense suggestion
+        - If <2 years: keep only the add-degree-details suggestion"]
 }
 
 GPA Recommendation Criteria:
@@ -47,13 +53,46 @@ Date Validation:
 Analyze all education entries and return a JSON array of analysis objects."""
 
 
+def _normalize_education_suggestions(suggestions: list[str], total_years_experience: float) -> list[str]:
+    """Normalize education suggestions to avoid conflicting advice."""
+    if not suggestions:
+        return suggestions
+    
+    if total_years_experience >= 2:
+        collapse_keywords = ["collapse", "condense", "one line", "single line", "reduce"]
+        keep_suggestions = [s for s in suggestions if any(kw in s.lower() for kw in collapse_keywords)]
+        if keep_suggestions:
+            return keep_suggestions[:1]
+    else:
+        detail_keywords = ["degree", "major", "graduation", "expected"]
+        keep_suggestions = [s for s in suggestions if any(kw in s.lower() for kw in detail_keywords)]
+        if keep_suggestions:
+            return keep_suggestions[:1]
+    
+    return suggestions[:1]
+
+
 def analyze_education(resume) -> list[EducationAnalysis]:
     """Analyze all education entries using LLM"""
 
     if not resume.education:
         return []
-
-    # Build education data for LLM
+    
+    # Calculate total years of experience for context-aware suggestions
+    total_years_experience = 0
+    if resume.experience:
+        for exp in resume.experience:
+            if exp.start_date:
+                try:
+                    from datetime import datetime
+                    start = datetime.strptime(exp.start_date, "%Y-%m")
+                    end = datetime.now()
+                    if exp.end_date:
+                        end = datetime.strptime(exp.end_date, "%Y-%m")
+                    months = (end.year - start.year) * 12 + end.month - start.month
+                    total_years_experience += months / 12
+                except:
+                    pass
     edu_data = []
     for i, edu in enumerate(resume.education):
         edu_data.append(
@@ -68,6 +107,11 @@ def analyze_education(resume) -> list[EducationAnalysis]:
         )
 
     prompt = f"""{EDUCATION_ANALYZER_PROMPT}
+
+Context: Total years of experience = {total_years_experience:.1f} years
+This context helps personalize suggestions:
+- If >=2 years: ONE suggestion to collapse education to university + dates only
+- If <2 years: ONE suggestion to add degree + expected graduation + major
 
 Education Data:
 {json.dumps(edu_data, indent=2)}
@@ -119,6 +163,10 @@ Return a JSON array of analysis objects for each education entry."""
             if has_location:
                 score += 2.0
             
+            # Normalize suggestions to avoid conflicts
+            raw_suggestions = analysis.get("suggestions", [])
+            normalized_suggestions = _normalize_education_suggestions(raw_suggestions, total_years_experience)
+            
             result.append(
                 EducationAnalysis(
                     entry_index=analysis.get("entry_index", 0),
@@ -136,7 +184,7 @@ Return a JSON array of analysis objects for each education entry."""
                     issues=[
                         AnalysisIssue(**issue) for issue in analysis.get("issues", [])
                     ],
-                    suggestions=analysis.get("suggestions", []),
+                    suggestions=normalized_suggestions,
                     score=round(score, 2),
                 )
             )
@@ -166,6 +214,12 @@ Return a JSON array of analysis objects for each education entry."""
             if edu.location:
                 score += 2.0
             
+            # Generate context-aware suggestion based on experience level
+            if total_years_experience >= 2:
+                suggestion = "Condense to university name + dates only (2+ years experience)"
+            else:
+                suggestion = "Add degree, major, and expected graduation date"
+            
             result.append(
                 EducationAnalysis(
                     entry_index=i,
@@ -187,7 +241,7 @@ Return a JSON array of analysis objects for each education entry."""
                             reason=str(e),
                         )
                     ],
-                    suggestions=[],
+                    suggestions=[suggestion],
                     score=round(score, 2),
                 )
             )

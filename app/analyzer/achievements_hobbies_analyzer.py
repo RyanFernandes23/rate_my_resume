@@ -127,11 +127,16 @@ Return a JSON object with the analysis."""
             hobby_score = min(4.0, hobby_count * 1.0)
         
         calculated_score = ach_score + hobby_score
-
+        
+        suggestions = analysis.get("suggestions", [])
+        
+        if ach_count == 0:
+            suggestions.insert(0, "Add at least one concrete achievement (e.g., Dean's List, Kaggle competition rank, published research, open source contribution)")
+        
         return AchievementsHobbiesAnalysis(
             achievements=ach_results,
             hobbies=hobby_results,
-            suggestions=analysis.get("suggestions", []),
+            suggestions=suggestions,
             score=round(calculated_score, 2),
         )
 
@@ -152,12 +157,16 @@ Return a JSON object with the analysis."""
         
         calculated_score = ach_score + hobby_score
         
+        suggestions = []
+        if ach_count == 0:
+            suggestions.append("Add at least one concrete achievement (e.g., Dean's List, Kaggle competition rank, published research, open source contribution)")
+        
         return AchievementsHobbiesAnalysis(
             achievements=[
                 AchievementAnalysis(
                     index=i,
                     title=a.title,
-                    impact_score=min(10.0, (i + 1) * 2.5),  # Sequential scoring
+                    impact_score=min(10.0, (i + 1) * 2.5),
                     recommendation="keep",
                     reasoning="Unable to analyze - based on available data",
                     issues=["Could not analyze - LLM error"],
@@ -168,5 +177,6 @@ Return a JSON object with the analysis."""
                 HobbyAnalysis(hobby=h, is_professional=False, suggestions=[])
                 for h in all_hobbies
             ],
+            suggestions=suggestions,
             score=round(calculated_score, 2),
         )

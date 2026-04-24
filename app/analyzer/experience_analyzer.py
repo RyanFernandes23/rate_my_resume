@@ -3,28 +3,123 @@ from ..llm.client import llm
 from .schemas import ExperienceAnalysis, AnalysisIssue, BulletSuggestion
 
 
+STRONG_ACTION_VERBS = {
+    "architected", "spearheaded", "orchestrated", "pioneered", "revolutionized",
+    "transformed", "optimized", "streamlined", "automated", "accelerated",
+    "delivered", "launched", "scaled", "reduced", "increased", "improved",
+    "designed", "implemented", "developed", "built", "led", "owned",
+    "pivoted", "mentored", "drove", "shipped", "enhanced", "modernized"
+}
+
+SCALE_PATTERNS = {
+    "gpu", "gpus", "users", "requests", "queries", "million", "billion",
+    "servers", "nodes", "clusters", "day", "month", "year", "concurrent"
+}
+
+
+def _clean_suggestion(suggestion: str) -> str:
+    """Remove redundant preambles from suggestion strings."""
+    phrases_to_remove = [
+        "add this to demonstrate impact",
+        "add this to show",
+        "demonstrate impact by",
+    ]
+    suggestion_lower = suggestion.lower().strip()
+    for phrase in phrases_to_remove:
+        if suggestion_lower.startswith(phrase):
+            suggestion = suggestion[len(phrase):].strip()
+            if suggestion and not suggestion[0].isupper():
+                suggestion = suggestion[0].upper() + suggestion[1:]
+            break
+    return suggestion
+
+
+METRIC_CONTEXT_PATTERNS = {
+    "latency": ("reduction", "[~50–70%]"),  # latency → suggest ~50-70% reduction
+    "response time": ("reduction", "[~50–70%]"),
+    "throughput": ("improvement", "[X]%"),  # throughput → generic
+    "accuracy": ("improvement", "[~3–5%]"),  # accuracy → small improvement range
+    "error": ("reduction", "[~30–50%]"),
+    "cost": ("reduction", "[~20–40%]"),
+    "time": ("saved", "[X]%"),
+    "speed": ("improvement", "[X]%"),
+    "users": ("scale", "[Y]k"),
+    "requests": ("scale", "[Z]k/day"),
+    "queries": ("scale", "[Z]k/day"),
+    "memory": ("reduction", "[~30–50%]"),
+    "gpu": ("scale", "[Y] GPUs"),
+}
+
+
+def _extract_metric_context(bullet: str) -> tuple[str, str] | None:
+    """Extract metric category from bullet to suggest appropriate placeholder."""
+    bullet_lower = bullet.lower()
+    for term, (context_type, placeholder) in METRIC_CONTEXT_PATTERNS.items():
+        if term in bullet_lower:
+            return (context_type, placeholder)
+    return None
+
+
+def _detect_bullet_strengths(bullets: list[str]) -> list[str]:
+    """Generate specific, non-generic strengths based on actual bullet content."""
+    strengths = set()
+    
+    for bullet in bullets:
+        bullet_lower = bullet.lower()
+        
+        has_tech_stack = any(term in bullet_lower for term in [
+            "python", "java", "react", "api", "docker", "kubernetes", 
+            "aws", "gcp", "sql", "pytorch", "tensorflow", "vue",
+            "node", "fastapi", "flask", "django", "spring", "go", "rust"
+        ])
+        if has_tech_stack:
+            strengths.add("Clear tech stack mentioned")
+        
+        has_business_outcome = any(term in bullet_lower for term in [
+            "revenue", "customer", "user", "engagement", "retention",
+            "conversion", "sales", "business", "product", "stakeholder"
+        ])
+        if has_business_outcome:
+            strengths.add("Directly tied to business outcome")
+        
+        has_scale = any(term in bullet_lower for term in SCALE_PATTERNS)
+        if has_scale:
+            strengths.add("Shows scale awareness")
+        
+        first_word = bullet.split()[0].lower() if bullet.split() else ""
+        if first_word in STRONG_ACTION_VERBS:
+            strengths.add("Strong action verb usage")
+        
+        has_metric = "%" in bullet or any(c.isdigit() for c in bullet)
+        if has_metric:
+            strengths.add("Includes quantified metrics")
+    
+    return list(strengths) if strengths else []
+
+
 EXPERIENCE_ANALYZER_PROMPT = """You are a senior recruiter and resume strategist. For each bullet point below, provide exactly ONE actionable improvement suggestion.
 
-Your suggestion must:
-- Be phrased as coaching advice, not a command.
-- Focus on the STAR framework: Situation, Task, Action, Result.
-- Identify what's missing for a recruiter: quantifiable impact, scale, problem solved, or technical depth.
-- If the bullet lacks metrics, suggest the exact TYPE of metric to add (e.g., "time saved", "accuracy gain vs. baseline", "throughput increase", "cost reduction") and use placeholders like [X]%, [Y]k, [Z] GPUs.
-- If the bullet already has a number, show how to make it more powerful by adding context.
-- Highlight the PROBLEM that was solved and why it mattered.
-- Mention any missing TECHNICAL DEPTH (e.g., frameworks, tools, optimizations, scale).
-- Never invent absolute figures; always use placeholders [X], [Y], [Z] unless the bullet already contains them.
-- The suggestion should be crisp, at most 2 sentences, and end with a call to action like "Add this to demonstrate impact."
+Your response must include:
+- "context": Why this matters (1 sentence). NO "Situation:" or "Task:" labels - just conversational framing. Max 15 words.
+- "suggestion": Actionable tip - what to add or change. Max 20 words. Never prepend with "Add this to demonstrate impact".
+
+Guidelines:
+- If the bullet lacks metrics, suggest the TYPE of metric using placeholders based on the bullet's context:
+  - If bullet mentions "latency", "response time" → use "[~50–70%] reduction"
+  - If bullet mentions "users", "requests" → use "[Y]k scale"
+  - If bullet mentions "accuracy" → use "[~3–5%] improvement"
+  - Otherwise use generic [X]%, [Y]k, [Z]
+- If the bullet already has a number, suggest how to make it more powerful.
+- Mention missing TECHNICAL DEPTH (e.g., frameworks, tools, scale).
+- Never invent absolute figures; use placeholders unless the bullet already contains them.
 
 Example:
-Input bullet: "Developed key components: patch embedding, positional encoding, multi-head self-attention, and transformer encoder blocks without relying on external ViT libraries."
-Suggestion: "Show the impact of building from scratch: did this achieve [X]% higher throughput or [Y]% accuracy versus using a library? Mention if it solved a deployment constraint (e.g., lightweight runtime) and any technical depth like memory optimizations. Add a placeholder like 'achieved [X]% throughput increase on [Y] GPUs' to quantify the result."
+Input: "Reduced latency across 55+ screens with LLM-powered intent detection."
+Output: {"context": "Recruiters want measurable impact", "suggestion": "Add [~50–70%] latency reduction and GPUs used to show scale"}
 
 IMPORTANT:
-- Output MUST include the full original bullet text for each suggestion
-- Use placeholders like [X]% or [Y] for missing metrics—do NOT fabricate numbers
-- Sound like a professional resume coach: encouraging but direct
-- Return a JSON array of suggestions for ALL bullets across ALL entries"""
+- Output MUST be a JSON array of objects with: entry_index, bullet_index, original_bullet, context, suggestion
+- If a bullet is already strong, you may skip it"""
 
 
 def analyze_experience(resume) -> list[ExperienceAnalysis]:
@@ -79,7 +174,8 @@ If a bullet is already strong, you may skip it."""
             entry_suggestions[entry_idx].append(BulletSuggestion(
                 bullet_index=item.get("bullet_index", 0),
                 original_bullet=item.get("original_bullet", ""),
-                suggestion=item.get("suggestion", "")
+                context=item.get("context"),
+                suggestion=_clean_suggestion(item.get("suggestion", ""))
             ))
 
 # Build ExperienceAnalysis objects with actual scoring
@@ -93,13 +189,24 @@ If a bullet is already strong, you may skip it."""
             metrics_found = sum(1 for b in bullets if "%" in b or any(c.isdigit() for c in b))
             metric_ratio = metrics_found / max(bullet_count, 1)
             
+            # Detect STAR framing elements
+            bullets_text = " ".join(bullets).lower()
+            has_situation_task = any(word in bullets_text for word in [
+                "when", "during", "while", "facing", "identifying", "assigned", "responsible"
+            ])
+            has_quantified_result = "%" in " ".join(bullets) or "k" in " ".join(bullets) or "m" in " ".join(bullets)
+            
             # Score based on: bullet count (5pts) + metrics (10pts)
             bullet_score = min(5.0, bullet_count * 1.5)
             metric_score = min(10.0, metric_ratio * 10)
             calculated_score = bullet_score + metric_score
             
-            # Star principle score derived from metric presence
-            star_score = min(10.0, (metric_ratio * 8) + 3)
+            # Stricter STAR principle score
+            base_star = metric_ratio * 5
+            framing_bonus = 2.0 if has_situation_task else 0
+            result_bonus = 2.0 if metrics_found > 0 else 0
+            action_bonus = 1.0 if any(b.split()[0].lower() in STRONG_ACTION_VERBS for b in bullets if b.split()) else 0
+            star_score = min(10.0, base_star + framing_bonus + result_bonus + action_bonus)
             
             # Determine recommendation based on score
             recommendation = "keep" if calculated_score >= 12 else "revise"
@@ -117,7 +224,7 @@ If a bullet is already strong, you may skip it."""
                     impact_score=round(calculated_score / 1.5, 2),
                     issues=[],
                     suggestions=suggestions,
-                    good_things=["Strong entry with metrics" if metrics_found else "Entry found" for _ in suggestions] if suggestions else ["Strong entry" if bullets else "No descriptions found"],
+                    good_things=_detect_bullet_strengths(bullets),
                     recommendation=recommendation,
                     score=round(calculated_score, 2),
                 )
@@ -141,28 +248,42 @@ If a bullet is already strong, you may skip it."""
             metric_score = min(10.0, metric_ratio * 10)
             calculated_score = bullet_score + metric_score
             
-            star_score = min(10.0, (metric_ratio * 8) + 3)
+            # Stricter STAR scoring in fallback too
+            bullets_text = " ".join(bullets).lower()
+            has_situation_task = any(word in bullets_text for word in [
+                "when", "during", "while", "facing", "identifying", "assigned", "responsible"
+            ])
+            base_star = metric_ratio * 5
+            framing_bonus = 2.0 if has_situation_task else 0
+            result_bonus = 2.0 if metrics_found > 0 else 0
+            action_bonus = 1.0 if any(b.split()[0].lower() in STRONG_ACTION_VERBS for b in bullets if b.split()) else 0
+            star_score = min(10.0, base_star + framing_bonus + result_bonus + action_bonus)
             recommendation = "keep" if calculated_score >= 12 else "revise"
             
             # Build suggestions
             fallback_suggestions = []
             for idx, bullet in enumerate(bullets):
                 if bullet_count < 3:
-                    sug_text = f"In your role at {exp.company}, you only have {bullet_count} bullets. Aim for 3-5 to fully showcase your impact."
+                    ctx = f"You only have {bullet_count} bullets at {exp.company}"
+                    sug_text = f"Aim for 3-5 bullets to fully showcase your impact"
                 elif not any("%" in b or any(c.isdigit() for c in b) for b in bullets):
-                    sug_text = f"The description for {exp.title} lacks metrics. Try adding growth percentages (e.g., 'improved throughput by [X]%')."
+                    ctx = f"The description for {exp.title} lacks quantified metrics"
+                    sug_text = f"Add growth percentages (e.g., 'improved throughput by [X]%')"
                 else:
-                    sug_text = "Focus on specific achievements rather than just listing duties."
+                    ctx = "Focus on specific achievements rather than just listing duties"
+                    sug_text = "Consider adding more context around problem solved"
                 fallback_suggestions.append(BulletSuggestion(
                     bullet_index=idx,
                     original_bullet=bullet,
+                    context=ctx,
                     suggestion=sug_text
                 ))
             if not fallback_suggestions:
                 fallback_suggestions = [BulletSuggestion(
                     bullet_index=0,
                     original_bullet=bullets[0] if bullets else "",
-                    suggestion="Consider adding more specific metrics to your descriptions."
+                    context="Add metrics to strengthen your descriptions",
+                    suggestion="Quantify your impact with percentages or numbers"
                 )]
             result.append(
                 ExperienceAnalysis(
@@ -177,7 +298,7 @@ If a bullet is already strong, you may skip it."""
                     impact_score=round(calculated_score / 1.5, 2),
                     issues=[AnalysisIssue(issue="Analyzer glitch", severity="low", reason="Falling back to simple heuristics")],
                     suggestions=fallback_suggestions,
-                    good_things=[f"Professional entry for {exp.title} detected"],
+                    good_things=_detect_bullet_strengths(bullets),
                     recommendation=recommendation,
                     score=round(calculated_score, 2),
                 )

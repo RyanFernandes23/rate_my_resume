@@ -18,6 +18,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+from app.db import settings
 from app.extractors import extract
 from app.llm import extract_resume
 from app.analyzer import analyze_resume
@@ -34,9 +35,9 @@ app.include_router(history.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
 
@@ -222,6 +223,7 @@ def transform_to_frontend_format(
                     {
                         "bullet_index": s.bullet_index,
                         "original_bullet": s.original_bullet,
+                        "context": s.context,
                         "suggestion": s.suggestion
                     }
                     for s in exp.suggestions
@@ -241,6 +243,7 @@ def transform_to_frontend_format(
                         {
                             "bullet_index": s.bullet_index,
                             "original_bullet": s.original_bullet,
+                            "context": s.context,
                             "suggestion": s.suggestion
                         }
                         for s in proj.suggestions
@@ -401,12 +404,13 @@ async def analyze_resume_endpoint(
                     # Handle both structured (new) and string (legacy) formats
                     for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
                         if isinstance(sug_item, dict):
-                            # New structured format: {bullet_index, original_bullet, suggestion}
+                            # New structured format: {bullet_index, original_bullet, context, suggestion}
                             actionable_suggestions.append({
                                 "section": section_key,
                                 "entry_index": entry_idx,
                                 "bullet_index": sug_item.get("bullet_index", bullet_idx),
                                 "bullet": sug_item.get("original_bullet", ""),
+                                "context": sug_item.get("context"),
                                 "suggestion": sug_item.get("suggestion", "")
                             })
                         else:
@@ -458,10 +462,32 @@ async def analyze_resume_endpoint(
                     }
         
         # ============================================================
-        # STEP 6: SAVE ANALYSIS TO SUPABASE
+        # STEP 6: DEDUCT CREDIT LAST (Only after successful analysis)
+        # This ensures users only pay when we actually deliver value
+        # ============================================================
+        credit_deducted = False
+        if user_id:
+            try:
+                success = deduct_user_credit(user_id, f"Resume analysis: {file.filename}")
+                if not success:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to process payment. Please try again."
+                    )
+                credit_deducted = True
+                credits_after = check_user_credits(user_id)
+                logger.info(f"User {user_id} credits after analysis: {credits_after}")
+            except Exception as e:
+                # Credit deduction failed AFTER analysis - this is critical
+                logger.error(f"Failed to deduct credit after successful analysis: {e}")
+                # Still return the result, but log the issue
+                # User got the value, we just can't charge them - don't save to history
+        
+        # ============================================================
+        # STEP 7: SAVE ANALYSIS TO SUPABASE (After credit attempt)
         # ============================================================
         analysis_id = None
-        if user_id:
+        if user_id and credit_deducted:
             try:
                 from app.db import service_supabase
                 insert_data = {
@@ -477,19 +503,7 @@ async def analyze_resume_endpoint(
                     logger.info(f"Analysis saved with id {analysis_id}")
             except Exception as e:
                 logger.error(f"Failed to save analysis: {e}")
-        
-        # ============================================================
-        # STEP 7: DEDUCT CREDIT (Only after successful analysis)
-        # ============================================================
-        if user_id:
-            success = deduct_user_credit(user_id, f"Resume analysis: {file.filename}")
-            if not success:
-                logger.error(f"Failed to deduct credit for user {user_id}")
-                # Continue anyway - we can handle this async later
-            else:
-                credit_deducted = True
-                credits_after = check_user_credits(user_id)
-                logger.info(f"User {user_id} credits after analysis: {credits_after}")
+                # Analysis delivered but not saved - don't throw, user got value
         
         logger.info(
             f"Response prepared with "
@@ -504,8 +518,18 @@ async def analyze_resume_endpoint(
         
         return JSONResponse(content=result_for_frontend)
     
+    except ValueError as e:
+        # Specific validation errors that users can understand
+        error_msg = str(e)
+        if "exceeds" in error_msg.lower() or "pages" in error_msg.lower():
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "page_limit", "message": error_msg}
+            )
+        raise HTTPException(status_code=400, detail=str(e))
+        
     except HTTPException:
-        # Re-raise HTTP exceptions (like 402) without modification
+        # Re-raise HTTP exceptions
         raise
         
     except Exception as e:
@@ -513,21 +537,16 @@ async def analyze_resume_endpoint(
         logger.error(f"Error during analysis: {str(e)}\n{error_trace}")
         
         # ============================================================
-        # STEP 6: REFUND CREDIT ON FAILURE
+        # NO REFUND NEEDED
+        # Credit is only deducted AFTER successful analysis
+        # If we hit error here, credit was never deducted
         # ============================================================
-        if user_id and not credit_deducted:
-            # Credit wasn't deducted yet, so no refund needed
-            pass
-        elif user_id and credit_deducted:
-            # Credit was deducted, but analysis failed - REFUND
-            logger.warning(f"Refunding credit to user {user_id} due to analysis failure")
-            refund_user_credit(user_id, f"Analysis failed: {str(e)[:100]}")
         
         raise HTTPException(
             status_code=500, 
             detail="Failed to analyze resume. Please try again."
         )
-    
+        
     finally:
         # Clean up temp file
         if tmp_path and os.path.exists(tmp_path):

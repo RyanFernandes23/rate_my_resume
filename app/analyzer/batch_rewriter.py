@@ -67,6 +67,7 @@ def batch_rewrite_suggestions(suggestions: list[dict]) -> dict:
             "entry_index": 0,
             "bullet_index": 0,
             "bullet": "original bullet text",
+            "context": "optional context string" (may be None),
             "suggestion": "full suggestion string (may contain quoted original)"
         },
         ...
@@ -82,6 +83,8 @@ def batch_rewrite_suggestions(suggestions: list[dict]) -> dict:
         sid = f"{s['section']}__{s['entry_index']}__{s['bullet_index']}"
         suggestions_text += f"ID: {sid}\n"
         suggestions_text += f"Original: {s['bullet']}\n"
+        if s.get('context'):
+            suggestions_text += f"Context: {s['context']}\n"
         suggestions_text += f"Suggestion: {s['suggestion']}\n\n"
 
     prompt = PROMPT_TEMPLATE.format(
@@ -108,6 +111,15 @@ def batch_rewrite_suggestions(suggestions: list[dict]) -> dict:
                 json_str = json_str[:-3]
             json_str = json_str.strip()
 
+            # Robust JSON extraction - find first { and last }
+            # This handles cases where LLM adds extra text after JSON
+            start_idx = json_str.find('{')
+            end_idx = json_str.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = json_str[start_idx:end_idx+1]
+                logger.info(f"Extracted JSON from position {start_idx} to {end_idx}")
+            
             result = json.loads(json_str)
             if not isinstance(result, dict):
                 logger.warning("LLM response is not a dict")
