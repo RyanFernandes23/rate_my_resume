@@ -1,84 +1,19 @@
+"""Education analyzer using LangChain and externalized prompts."""
 import json
+from typing import Optional
 from ..llm.client import llm
-from .schemas import EducationAnalysis, GpaAnalysis, AnalysisIssue
+from ..analyzer.schemas import EducationAnalysis, GpaAnalysis, AnalysisIssue
+from .prompts.education_prompts import get_education_prompt, format_education_data
 
 
-EDUCATION_ANALYZER_PROMPT = """You are a resume analysis expert with 10+ years of recruiting experience.
-
-Recruiter Perspective on Education:
-1. EDUCATION IS SECONDARY: After 1-2 years of experience, education becomes a checkbox
-2. SCANNABILITY: Recruiters spend <5 seconds on education section
-3. RELEVANCE: Only relevant for freshers or career changers
-4. GPAs MATTER LESS: After 2+ years, work experience outweighs GPA
-5. LOCATION: Recruiters may prefer local candidates
-
-You also have access to total_years_experience - use this to personalize suggestions:
-- If total_years_experience >= 2: Suggest condensing education (university name + dates only)
-- If total_years_experience < 2: Suggest keeping degree + expected graduation + major details
-
-Analyze each education entry:
-1. Check if institution name is valid and properly formatted
-2. Validate dates (start should be before end, should be recent)
-3. Evaluate GPA/score - determine if it should be kept or removed
-4. Check for location information
-5. Apply experience-based logic to suggestions
-
-For each education entry, return a JSON object with:
-{
-    "entry_index": 0,
-    "institution_name_valid": true/false,
-    "institution_name": "Institution Name",
-    "date_issues": ["issue1", "issue2"],
-    "gpa_analysis": {
-        "value": "8.5 CGPA" or null,
-        "recommendation": "keep/remove",
-        "reasoning": "explanation"
-    },
-    "issues": [{"issue": "description", "severity": "high/medium/low", "reason": "explanation"}],
-    "suggestions": ["ONE context-aware suggestion based on total_years_experience:
-        - If >=2 years: keep only the collapse/condense suggestion
-        - If <2 years: keep only the add-degree-details suggestion"]
-}
-
-GPA Recommendation Criteria:
-- Keep if: CGPA > 7.5 or percentage > 70% or equivalent good score
-- Remove if: CGPA < 6.5 or percentage < 60% or not specified
-- Consider context: Some fields (CS, Engineering) expect higher GPAs
-
-Date Validation:
-- End date should not be in the future for completed degrees
-- Start date should be before end date
-- Normal education duration: 2-4 years for bachelor's, 2 years for master's
-
-Analyze all education entries and return a JSON array of analysis objects."""
-
-
-def _normalize_education_suggestions(suggestions: list[str], total_years_experience: float) -> list[str]:
-    """Normalize education suggestions to avoid conflicting advice."""
-    if not suggestions:
-        return suggestions
-    
-    if total_years_experience >= 2:
-        collapse_keywords = ["collapse", "condense", "one line", "single line", "reduce"]
-        keep_suggestions = [s for s in suggestions if any(kw in s.lower() for kw in collapse_keywords)]
-        if keep_suggestions:
-            return keep_suggestions[:1]
-    else:
-        detail_keywords = ["degree", "major", "graduation", "expected"]
-        keep_suggestions = [s for s in suggestions if any(kw in s.lower() for kw in detail_keywords)]
-        if keep_suggestions:
-            return keep_suggestions[:1]
-    
-    return suggestions[:1]
-
-
-def analyze_education(resume) -> list[EducationAnalysis]:
-    """Analyze all education entries using LLM"""
+def analyze_education(resume, tier="STANDARD"):
+    """Analyze all education entries using LLM with externalized prompts."""
+    from ..analyzer.schemas import EducationAnalysis
 
     if not resume.education:
         return []
-    
-    # Calculate total years of experience for context-aware suggestions
+
+    # Calculate total years of experience for context
     total_years_experience = 0
     if resume.experience:
         for exp in resume.experience:
@@ -93,33 +28,16 @@ def analyze_education(resume) -> list[EducationAnalysis]:
                     total_years_experience += months / 12
                 except:
                     pass
-    edu_data = []
-    for i, edu in enumerate(resume.education):
-        edu_data.append(
-            {
-                "index": i,
-                "name": edu.name,
-                "score": edu.score,
-                "start_date": edu.start_date,
-                "end_date": edu.end_date,
-                "location": edu.location,
-            }
-        )
 
-    prompt = f"""{EDUCATION_ANALYZER_PROMPT}
-
-Context: Total years of experience = {total_years_experience:.1f} years
-This context helps personalize suggestions:
-- If >=2 years: ONE suggestion to collapse education to university + dates only
-- If <2 years: ONE suggestion to add degree + expected graduation + major
-
-Education Data:
-{json.dumps(edu_data, indent=2)}
-
-Return a JSON array of analysis objects for each education entry."""
+    # Use LangChain prompt template
+    prompt = get_education_prompt(tier)
+    formatted_prompt = prompt.format(
+        total_years=total_years_experience,
+        education_data=format_education_data(resume.education),
+    )
 
     try:
-        response = llm.invoke(prompt)
+        response = llm.invoke(formatted_prompt)
         json_str = response.content.strip()
 
         # Clean up markdown
@@ -133,43 +51,15 @@ Return a JSON array of analysis objects for each education entry."""
 
         analyses = json.loads(json_str)
 
-        # Convert to EducationAnalysis objects with actual scoring
         result = []
         for analysis in analyses:
+            idx = analysis.get("entry_index", 0)
+            edu = resume.education[idx] if idx < len(resume.education) else None
             gpa_data = analysis.get("gpa_analysis", {})
-            
-            # Calculate actual score based on data completeness
-            edu = resume.education[analysis.get("entry_index", 0)] if analysis.get("entry_index", 0) < len(resume.education) else None
-            
-            # Scoring: institution (3pts) + dates (3pts) + gpa (2pts) + location (2pts)
-            score = 0.0
-            
-            # Institution valid: 3pts
-            if analysis.get("institution_name_valid", True):
-                score += 3.0
-            
-            # Has valid dates: 3pts
-            has_dates = edu and edu.start_date and edu.end_date
-            if has_dates and not analysis.get("date_issues"):
-                score += 3.0
-            
-            # Has GPA/score: 2pts
-            has_gpa = edu and edu.score
-            if has_gpa:
-                score += 2.0
-            
-            # Has location: 2pts
-            has_location = edu and edu.location
-            if has_location:
-                score += 2.0
-            
-            # Normalize suggestions to avoid conflicts
-            raw_suggestions = analysis.get("suggestions", [])
-            normalized_suggestions = _normalize_education_suggestions(raw_suggestions, total_years_experience)
-            
+
             result.append(
                 EducationAnalysis(
-                    entry_index=analysis.get("entry_index", 0),
+                    entry_index=idx,
                     institution_name_valid=analysis.get("institution_name_valid", True),
                     institution_name=analysis.get("institution_name", ""),
                     start_date=edu.start_date if edu else None,
@@ -177,72 +67,51 @@ Return a JSON array of analysis objects for each education entry."""
                     location=edu.location if edu else None,
                     date_issues=analysis.get("date_issues", []),
                     gpa_analysis=GpaAnalysis(
-                        value=gpa_data.get("value") or edu.score,
+                        value=gpa_data.get("value") or (edu.score if edu else None),
                         recommendation=gpa_data.get("recommendation", "keep"),
                         reasoning=gpa_data.get("reasoning", ""),
                     ),
-                    issues=[
-                        AnalysisIssue(**issue) for issue in analysis.get("issues", [])
-                    ],
-                    suggestions=normalized_suggestions,
-                    score=round(score, 2),
+                    issues=[AnalysisIssue(**i) if isinstance(i, dict) else i for i in analysis.get("issues", [])],
+                    suggestions=analysis.get("suggestions", [])[:1],
+                    score=float(analysis.get("score", 8.0)),
                 )
             )
 
         return result
 
     except Exception as e:
-        # Fallback with stricter scoring
-        result = []
-        for i, edu in enumerate(resume.education):
-            # Calculate actual score based on data completeness
-            score = 0.0
-            
-            # Institution valid: 3pts
-            if edu.name:
-                score += 3.0
-            
-            # Has valid dates: 3pts
-            if edu.start_date and edu.end_date:
-                score += 3.0
-            
-            # Has GPA/score: 2pts
-            if edu.score:
-                score += 2.0
-            
-            # Has location: 2pts
-            if edu.location:
-                score += 2.0
-            
-            # Generate context-aware suggestion based on experience level
-            if total_years_experience >= 2:
-                suggestion = "Condense to university name + dates only (2+ years experience)"
-            else:
-                suggestion = "Add degree, major, and expected graduation date"
-            
-            result.append(
-                EducationAnalysis(
-                    entry_index=i,
-                    institution_name_valid=bool(edu.name),
-                    institution_name=edu.name or "",
-                    start_date=edu.start_date,
-                    end_date=edu.end_date,
-                    location=edu.location,
-                    date_issues=[],
-                    gpa_analysis=GpaAnalysis(
-                        value=edu.score,
-                        recommendation="keep" if edu.score else "remove",
-                        reasoning="Based on available data",
-                    ),
-                    issues=[
-                        AnalysisIssue(
-                            issue="Could not fully analyze education",
-                            severity="low",
-                            reason=str(e),
-                        )
-                    ],
-                    suggestions=[suggestion],
-                    score=round(score, 2),
-                )
+        print(f"Education analysis fallback triggered: {e}")
+        return _fallback_education_analysis(resume, total_years_experience, e)
+
+
+def _fallback_education_analysis(resume, total_years_experience, error):
+    """Fallback analysis when LLM fails - simplified."""
+    result = []
+    for i, edu in enumerate(resume.education):
+        score = 0.0
+        if edu.name: score += 4.0
+        if edu.start_date and edu.end_date: score += 3.0
+        if edu.score: score += 3.0
+
+        suggestion = "Keep it concise" if total_years_experience >= 2 else "Highlight academic achievements"
+
+        result.append(
+            EducationAnalysis(
+                entry_index=i,
+                institution_name_valid=bool(edu.name),
+                institution_name=edu.name or "Education",
+                start_date=edu.start_date,
+                end_date=edu.end_date,
+                location=edu.location,
+                date_issues=[],
+                gpa_analysis=GpaAnalysis(
+                    value=edu.score,
+                    recommendation="keep" if edu.score else "remove",
+                    reasoning="Fallback assessment",
+                ),
+                issues=[AnalysisIssue(issue="Analyzer fallback", severity="low", reason=str(error))],
+                suggestions=[suggestion],
+                score=score,
             )
-        return result
+        )
+    return result

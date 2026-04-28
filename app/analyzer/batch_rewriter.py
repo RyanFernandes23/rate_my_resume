@@ -1,147 +1,121 @@
+"""Batch rewriter using LangChain and externalized prompts."""
 import re
 import json
 import logging
 import time
 from app.llm import _wait_for_rate_limit, _is_rate_limit_error
 from app.llm.client import llm
+from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_batch_rewriter_data
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert resume writer with deep recruiting experience. For each original bullet, generate exactly 3 STAR-based rewrite alternatives using placeholders for missing metrics.
 
-IMPORTANT: Never fabricate specific numbers—use [X], [Y], [Z] placeholders unless the original bullet already contains a number.
-
-Output ONLY a valid JSON object where keys are the suggestion IDs and values are arrays of objects with 'label' and 'content'."""
-
-PROMPT_TEMPLATE = """{system_prompt}
-
-Use the STAR framework (Situation, Task, Action, Result) and these strict rules for each rewrite style:
-
-1. **Action-Oriented** (STAR emphasis: Situation & Action)
-   - Start with a strong, unique action verb (Engineered, Architected, Spearheaded, Optimized, Accelerated).
-   - Describe the Situation/Problem briefly and the Action taken.
-   - End with a placeholder result tied directly to the action (e.g., "reducing [X]% manual effort" or "boosting [Y]% throughput").
-   - Never use fake numbers; use [X]%, [Y]k, [Z] GPUs placeholders.
-   - Keep to one sentence, 15-25 words.
-
-2. **Data-Driven** (STAR emphasis: Result)
-   - Start with a strong action verb.
-   - Combine the action with a quantifiable outcome using placeholders, then explicitly link it to a business/engineering outcome.
-   - Example: "Implemented [technique] achieving [X]% accuracy and [Y]% faster training, enabling deployment on [Z] GPUs with [A]% cost reduction."
-   - If the original bullet already contains a real number, keep it and add placeholders for missing context.
-   - 20-30 words, structure: Action → Metric → Impact.
-
-3. **Technical/Concise** (STAR emphasis: Task & Action, ATS-friendly)
-   - A tight, keyword-rich sentence under 18 words.
-   - Include tools, techniques, and a placeholder metric (e.g., "Built ViT with PyTorch, achieving [X]% accuracy").
-   - No fluff; every word earns its place.
-   - Start with a verb.
-
-General rules:
-- Always use placeholders [X], [Y], [Z] for any number not present in the original bullet.
-- Do NOT invent specific numbers; use placeholders.
-- Highlight problem-solving, technical depth, and scale wherever possible.
-- All versions must be truthful – if the original bullet has a specific metric, you may reuse it and add placeholders for further impacts.
-- Keep language professional yet dynamic.
-
-Here are the original bullets and their AI-generated suggestions:
-
-{suggestions}
-
-Return ONLY a JSON object. Example format:
-{{
-  "experience__0__0": [
-    {{"label": "Action-Oriented", "content": "..."}},
-    {{"label": "Data-Driven", "content": "..."}},
-    {{"label": "Technical/Concise", "content": "..."}}
-  ]
-}}
-"""
+def _extract_suggestion_id(suggestion_key: str) -> str:
+    """Extract the numeric ID from a suggestion key like '0_1_2'."""
+    parts = suggestion_key.split("__")
+    if len(parts) >= 3:
+        return parts[2]
+    return suggestion_key
 
 
-def batch_rewrite_suggestions(suggestions: list[dict]) -> dict:
-    """
-    suggestions: [
-        {
-            "section": "experience",
-            "entry_index": 0,
-            "bullet_index": 0,
-            "bullet": "original bullet text",
-            "context": "optional context string" (may be None),
-            "suggestion": "full suggestion string (may contain quoted original)"
-        },
-        ...
-    ]
-    Returns dict like { "experience__0__0": [ { "label": "...", "content": "..." }, ... ], ... }
-    Key format: "{section}__{entry_index}__{bullet_index}"
-    """
-    if not suggestions:
-        return {}
+def _clean_json_response(content: str) -> str:
+    """Clean markdown and extract JSON from LLM response."""
+    json_str = content.strip()
+    if json_str.startswith("```json"):
+        json_str = json_str[7:]
+    elif json_str.startswith("```\njson"):
+        json_str = json_str[8:]
+    elif json_str.startswith("```"):
+        json_str = json_str[3:]
+    if json_str.endswith("```"):
+        json_str = json_str[:-3]
+    return json_str.strip()
 
-    suggestions_text = ""
-    for s in suggestions:
-        sid = f"{s['section']}__{s['entry_index']}__{s['bullet_index']}"
-        suggestions_text += f"ID: {sid}\n"
-        suggestions_text += f"Original: {s['bullet']}\n"
-        if s.get('context'):
-            suggestions_text += f"Context: {s['context']}\n"
-        suggestions_text += f"Suggestion: {s['suggestion']}\n\n"
 
-    prompt = PROMPT_TEMPLATE.format(
-        system_prompt=SYSTEM_PROMPT,
-        suggestions=suggestions_text
-    )
+def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
+    """Parse rewrite options from LLM JSON response."""
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON from batch rewriter: {e}")
+        logger.error(f"Response was: {json_str[:500]}")
+        return []
 
-    _wait_for_rate_limit()
+    rewrites = []
+    label_map = {
+        "action_oriented": "Action-Oriented",
+        "data_driven": "Data-Driven",
+        "leadership_impact": "Leadership/Impact",
+    }
 
-    max_retries = 3
-    base_delay = 10
+    for key, label in label_map.items():
+        if key in data:
+            item = data[key]
+            if isinstance(item, dict) and "content" in item:
+                rewrites.append({
+                    "label": item.get("label", label),
+                    "content": item["content"],
+                })
+            elif isinstance(item, str):
+                rewrites.append({
+                    "label": label,
+                    "content": item,
+                })
 
-    for attempt in range(max_retries):
+    return rewrites
+
+
+def batch_rewrite_suggestions(actionable_suggestions, tier: str = "STANDARD"):
+    """Generate rewrite options for multiple suggestions using LangChain."""
+    rewrites = {}
+
+    for sug in actionable_suggestions:
+        section_key = sug["section"]
+        entry_idx = sug["entry_index"]
+        bullet_idx = sug["bullet_index"]
+        suggestion_key = f"{section_key}__{entry_idx}__{bullet_idx}"
+
+        # Rate limit handling
+        _wait_for_rate_limit()
+
         try:
-            response = llm.invoke(prompt)
-            json_str = response.content.strip()
+            prompt = get_batch_rewriter_prompt(tier)
+            formatted_data = format_batch_rewriter_data(
+                original_bullet=sug["bullet"],
+                advice=sug.get("advice", ""),
+                context=sug.get("context", ""),
+                target_tier=tier,
+            )
+            formatted_prompt = prompt.format(**formatted_data)
 
-            json_str = json_str.strip()
-            if json_str.startswith("```json"):
-                json_str = json_str[7:]
-            elif json_str.startswith("```"):
-                json_str = json_str[3:]
-            if json_str.endswith("```"):
-                json_str = json_str[:-3]
-            json_str = json_str.strip()
+            response = llm.invoke(formatted_prompt)
+            json_str = _clean_json_response(response.content)
 
-            # Robust JSON extraction - find first { and last }
-            # This handles cases where LLM adds extra text after JSON
-            start_idx = json_str.find('{')
-            end_idx = json_str.rfind('}')
-            
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                json_str = json_str[start_idx:end_idx+1]
-                logger.info(f"Extracted JSON from position {start_idx} to {end_idx}")
-            
-            result = json.loads(json_str)
-            if not isinstance(result, dict):
-                logger.warning("LLM response is not a dict")
-                return {}
-            return result
+            parsed_rewrites = _parse_rewrites_from_response(json_str, suggestion_key)
+            if parsed_rewrites:
+                rewrites[suggestion_key] = parsed_rewrites
+            else:
+                logger.warning(f"No rewrites generated for {suggestion_key}")
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON from LLM: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(base_delay * (2**attempt))
-                continue
-            return {}
+            # Small delay to avoid rate limits
+            time.sleep(0.5)
+
         except Exception as e:
-            if _is_rate_limit_error(e) and attempt < max_retries - 1:
-                wait_time = base_delay * (2**attempt) * 2
-                logger.warning(f"Rate limited. Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-                continue
-            logger.error(f"Error in batch rewrite: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(base_delay * (2**attempt))
-                continue
-            return {}
+            logger.error(f"Error generating rewrites for {suggestion_key}: {e}")
+            # Provide fallback rewrites
+            rewrites[suggestion_key] = [
+                {
+                    "label": "Action-Oriented",
+                    "content": f"Spearheaded initiative that improved {sug['bullet'][:50]}... [X]% efficiency",
+                },
+                {
+                    "label": "Data-Driven",
+                    "content": f"Optimized process achieving [X]% improvement in {sug['bullet'][:40]}...",
+                },
+                {
+                    "label": "Leadership/Impact",
+                    "content": f"Led cross-functional team to enhance {sug['bullet'][:50]}... serving [Y]k users",
+                },
+            ]
 
-    return {}
+    return rewrites

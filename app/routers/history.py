@@ -6,14 +6,28 @@ router = APIRouter(prefix="/history", tags=["history"])
 
 
 @router.get("")
-async def list_analyses(current_user: dict = Depends(get_current_user)):
+async def list_analyses(
+    current_user: dict = Depends(get_current_user),
+    page: int = 1,
+    limit: int = 10
+):
     user_id = current_user["id"]
+    offset = (page - 1) * limit
+    
     resp = service_supabase.table("analyses") \
-        .select("id, created_at, file_name, target_tier") \
+        .select("id, created_at, file_name, target_tier", count="exact") \
         .eq("user_id", user_id) \
         .order("created_at", desc=True) \
+        .range(offset, offset + limit - 1) \
         .execute()
-    return resp.data or []
+        
+    return {
+        "items": resp.data or [],
+        "total": resp.count or 0,
+        "page": page,
+        "limit": limit,
+        "total_pages": ((resp.count or 0) + limit - 1) // limit if resp.count else 0
+    }
 
 
 @router.get("/{analysis_id}")

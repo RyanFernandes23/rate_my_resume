@@ -1,58 +1,12 @@
+"""Achievements and hobbies analyzer using LangChain and externalized prompts."""
 import json
 from ..llm.client import llm
-from .schemas import AchievementsHobbiesAnalysis, AchievementAnalysis, HobbyAnalysis
+from ..analyzer.schemas import AchievementsHobbiesAnalysis, AchievementAnalysis, HobbyAnalysis
+from .prompts.achievements_prompts import get_achievements_prompt, format_achievements_data
 
 
-ACHIEVEMENTS_HOBBIES_PROMPT = """You are a resume analysis expert specializing in achievements and hobbies evaluation.
-
-Analyze achievements:
-1. Evaluate impact of each achievement
-2. Determine if it should be kept or removed
-3. Check for typos, grammar issues
-4. Verify relevance to career
-
-For achievements, return array:
-[{
-    "index": 0,
-    "title": "Achievement title",
-    "impact_score": number (0-10),
-    "recommendation": "keep/remove",
-    "reasoning": "explanation why keep or remove",
-    "issues": ["issue1", "issue2"]
-}]
-
-Analyze hobbies:
-1. Determine if hobby is professional (relates to job/career)
-2. Consider removing very common/unprofessional hobbies
-3. Check for typos
-
-For hobbies, return array:
-[{
-    "hobby": "hobby name",
-    "is_professional": true/false,
-    "suggestions": ["suggestion if needed"]
-}]
-
-Return a JSON object with:
-{
-    "achievements": [...],
-    "hobbies": [...],
-    "suggestions": ["suggest something IF the score is < 10, e.g. 'Add certifications' or 'Quantify your awards'"],
-    "score": number (out of 10)
-}
-
-IMPORTANT: If the user has empty achievements, suggest specific things they likely have but didn't list (e.g. 'Dean's List', 'Open Source contributions', 'Certifications from Coursera/Udemy').
-
-Scoring:
-- Achievements count for 6 marks, Hobbies for 4 marks
-- Keep meaningful achievements with impact
-- Professional hobbies add value, common ones can be omitted
-- Empty achievements or hobbies is acceptable (neutral score)"""
-
-
-def analyze_achievements_hobbies(resume) -> AchievementsHobbiesAnalysis:
-    """Analyze achievements and hobbies (combined node)"""
-
+def analyze_achievements_hobbies(resume, tier="STANDARD"):
+    """Analyze achievements and hobbies (combined node) using externalized prompts."""
     # Prepare data
     achievements = resume.achievements or []
     hobbies = resume.hobbies or []
@@ -61,18 +15,16 @@ def analyze_achievements_hobbies(resume) -> AchievementsHobbiesAnalysis:
     # Combine extra_curricular with hobbies for analysis
     all_hobbies = hobbies + extra_curricular
 
-    prompt = f"""{ACHIEVEMENTS_HOBBIES_PROMPT}
-
-Achievements:
-{json.dumps([{"title": a.title, "descriptions": a.descriptions} for a in achievements], indent=2)}
-
-Hobbies/Extra-curricular:
-{json.dumps(all_hobbies, indent=2)}
-
-Return a JSON object with the analysis."""
+    # Use LangChain prompt template
+    prompt = get_achievements_prompt(tier)
+    formatted_data = format_achievements_data(achievements, hobbies, extra_curricular)
+    formatted_prompt = prompt.format(
+        achievements_data=formatted_data["achievements_data"],
+        hobbies_data=formatted_data["hobbies_data"],
+    )
 
     try:
-        response = llm.invoke(prompt)
+        response = llm.invoke(formatted_prompt)
         json_str = response.content.strip()
 
         # Clean up markdown
@@ -89,7 +41,7 @@ Return a JSON object with the analysis."""
         # Convert achievements with actual scoring
         ach_results = []
         ach_count = len(analysis.get("achievements", []))
-        
+
         for ach in analysis.get("achievements", []):
             ach_results.append(
                 AchievementAnalysis(
@@ -105,7 +57,7 @@ Return a JSON object with the analysis."""
         # Convert hobbies with actual scoring
         hobby_results = []
         hobby_count = len(analysis.get("hobbies", []))
-        
+
         for hb in analysis.get("hobbies", []):
             hobby_results.append(
                 HobbyAnalysis(
@@ -118,21 +70,21 @@ Return a JSON object with the analysis."""
         # Calculate actual score based on what's present
         # Achievements: 6pts (0.75pt each for up to 4)
         ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
-        
+
         # Hobbies: 4pts (1pt each for up to 4, but penalize if none)
         if hobby_count == 0 and ach_count == 0:
             # Both missing - very strict - low score
             hobby_score = 2.0
         else:
             hobby_score = min(4.0, hobby_count * 1.0)
-        
+
         calculated_score = ach_score + hobby_score
-        
+
         suggestions = analysis.get("suggestions", [])
-        
+
         if ach_count == 0:
             suggestions.insert(0, "Add at least one concrete achievement (e.g., Dean's List, Kaggle competition rank, published research, open source contribution)")
-        
+
         return AchievementsHobbiesAnalysis(
             achievements=ach_results,
             hobbies=hobby_results,
@@ -142,41 +94,45 @@ Return a JSON object with the analysis."""
 
     except Exception as e:
         # Fallback with stricter scoring
-        # Calculate actual scores based on what's present
-        ach_count = len(achievements)
-        hobby_count = len(all_hobbies)
-        
-        # Achievements: 6pts (0.75pt each for up to 4)
-        ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
-        
-        # Hobbies: 4pts (1pt each for up to 4, but penalize if none)
-        if hobby_count == 0 and ach_count == 0:
-            hobby_score = 2.0  # Both missing - strict
-        else:
-            hobby_score = min(4.0, hobby_count * 1.0)
-        
-        calculated_score = ach_score + hobby_score
-        
-        suggestions = []
-        if ach_count == 0:
-            suggestions.append("Add at least one concrete achievement (e.g., Dean's List, Kaggle competition rank, published research, open source contribution)")
-        
-        return AchievementsHobbiesAnalysis(
-            achievements=[
-                AchievementAnalysis(
-                    index=i,
-                    title=a.title,
-                    impact_score=min(10.0, (i + 1) * 2.5),
-                    recommendation="keep",
-                    reasoning="Unable to analyze - based on available data",
-                    issues=["Could not analyze - LLM error"],
-                )
-                for i, a in enumerate(achievements)
-            ],
-            hobbies=[
-                HobbyAnalysis(hobby=h, is_professional=False, suggestions=[])
-                for h in all_hobbies
-            ],
-            suggestions=suggestions,
-            score=round(calculated_score, 2),
-        )
+        return _fallback_achievements_analysis(achievements, all_hobbies, e)
+
+
+def _fallback_achievements_analysis(achievements, all_hobbies, error):
+    """Fallback analysis when LLM fails."""
+    ach_count = len(achievements)
+    hobby_count = len(all_hobbies)
+
+    # Achievements: 6pts (0.75pt each for up to 4)
+    ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
+
+    # Hobbies: 4pts (1pt each for up to 4, but penalize if none)
+    if hobby_count == 0 and ach_count == 0:
+        hobby_score = 2.0  # Both missing - strict
+    else:
+        hobby_score = min(4.0, hobby_count * 1.0)
+
+    calculated_score = ach_score + hobby_score
+
+    suggestions = []
+    if ach_count == 0:
+        suggestions.append("Add at least one concrete achievement (e.g., Dean's List, Kaggle competition rank, published research, open source contribution)")
+
+    return AchievementsHobbiesAnalysis(
+        achievements=[
+            AchievementAnalysis(
+                index=i,
+                title=a.title,
+                impact_score=min(10.0, (i + 1) * 2.5),
+                recommendation="keep",
+                reasoning="Unable to analyze - based on available data",
+                issues=["Could not analyze - LLM error"],
+            )
+            for i, a in enumerate(achievements)
+        ],
+        hobbies=[
+            HobbyAnalysis(hobby=h, is_professional=False, suggestions=[])
+            for h in all_hobbies
+        ],
+        suggestions=suggestions,
+        score=round(calculated_score, 2),
+    )

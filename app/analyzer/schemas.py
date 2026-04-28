@@ -31,11 +31,17 @@ class BasicInfoAnalysis(BaseModel):
     links: LinksAnalysis
 
 
+class BulletRewrite(BaseModel):
+    label: str  # e.g., "Action-Oriented", "Data-Driven", "Leadership"
+    content: str
+
+
 class BulletSuggestion(BaseModel):
     bullet_index: int
     original_bullet: str
-    context: Optional[str] = None  # STAR framing context (optional)
-    suggestion: str  # Actionable tip
+    context: Optional[str] = None  # Why this matters for the tier
+    advice: str  # Conversational feedback (e.g., "Hey, I read your bullet...")
+    rewrites: List[BulletRewrite] = Field(default_factory=list)
 
 
 class ExperienceAnalysis(BaseModel):

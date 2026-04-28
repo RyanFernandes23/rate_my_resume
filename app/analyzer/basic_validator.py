@@ -35,7 +35,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
         )
         name_valid = False
-        name_suggestions.append("Add your full name at the top of the resume")
+        name_suggestions.append("Hey, I noticed your name is missing. You should add your full name at the top of the resume so recruiters know who you are!")
     elif len(resume.name.split()) < 2:
         name_issues.append(
             AnalysisIssue(
@@ -45,7 +45,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
         )
         name_suggestions.append(
-            "Add your last name for a complete professional identity"
+            "Hey, you only provided your first name. Adding your last name is important for a complete professional identity."
         )
 
     name_analysis = FieldAnalysis(
@@ -99,7 +99,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
             email_valid = False
             email_suggestions.append(
-                "Use a professional email address (firstname.lastname@gmail.com)"
+                "Hey, this email looks like a placeholder. You should use a professional email address like firstname.lastname@gmail.com."
             )
 
     email_analysis = FieldAnalysis(
@@ -123,7 +123,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
         )
         phone_valid = False
-        phone_suggestions.append("Add a contact number with country code")
+        phone_suggestions.append("Hey, I can't find your phone number. Adding a contact number with your country code is essential for recruiters to reach you.")
     elif resume.phone:
         # Check for reasonable phone format
         import re
@@ -199,6 +199,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
 
     # Check if at least contact links are present
     if not resume.linkedin and not resume.github and not resume.links:
+        links_valid = False
         links_issues.append(
             AnalysisIssue(
                 issue="No professional links provided",
@@ -207,7 +208,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
         )
         links_suggestions.append(
-            "Add LinkedIn and/or GitHub links to showcase your work"
+            "Hey, I don't see any professional links. You should add your LinkedIn and GitHub profiles to showcase your work and network."
         )
 
     links_analysis = LinksAnalysis(
@@ -220,32 +221,33 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
     )
 
     # Calculate score (out of 10)
-    # Base 10, subtract for issues
+    # Base 10, subtract heavily for critical missing info
     base_score = 10.0
 
-    # Name issues
+    # Name issues (Critical)
     if not name_valid:
-        base_score -= 2.0
+        base_score -= 4.0
     elif any(i.severity == "medium" for i in name_issues):
-        base_score -= 0.5
-
-    # Email issues
-    if not email_valid:
-        base_score -= 2.0
-    elif any(i.severity == "medium" for i in email_issues):
-        base_score -= 0.5
-
-    # Phone issues
-    if not phone_valid:
-        base_score -= 2.0
-    elif any(i.severity == "medium" for i in phone_issues):
-        base_score -= 0.5
-
-    # Links issues
-    if not links_valid:
         base_score -= 1.0
+
+    # Email issues (Critical)
+    if not email_valid:
+        base_score -= 4.0
+    elif any(i.severity == "medium" for i in email_issues):
+        base_score -= 1.0
+
+    # Phone issues (High)
+    if not phone_valid:
+        base_score -= 3.0
+    elif any(i.severity == "medium" for i in phone_issues):
+        base_score -= 1.0
+
+    # Links issues (Medium)
+    if not links_valid:
+        base_score -= 2.0
     elif missing_important:
-        base_score -= 0.5
+        # Penalize for each missing important link
+        base_score -= (0.5 * len(missing_important))
 
     score = max(0, base_score)
 

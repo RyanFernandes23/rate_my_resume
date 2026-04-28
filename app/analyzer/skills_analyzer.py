@@ -1,66 +1,27 @@
+"""Skills analyzer using LangChain and externalized prompts."""
 import json
 from ..llm.client import llm
-from .schemas import SkillsAnalysis, AnalysisIssue
+from ..analyzer.schemas import SkillsAnalysis, AnalysisIssue
+from .prompts.skills_prompts import get_skills_prompt, format_skills_data
 
 
-SKILLS_ANALYZER_PROMPT = """You are a resume analysis expert with 10+ years of recruiting experience.
-
-Recruiter Perspective on Skills:
-1. ATS SCANNING: Most ATS systems search for skills keywords - list them!
-2. QUICK SCAN: Recruiters scan for 2-3 seconds looking for key tech stacks
-3. RELEVANCE: Skills should match the job description keywords
-4. GROUPING: Categorized skills (Languages, Frameworks, Tools) are easier to scan
-5. FRESHERS vs EXPERIENCED: Freshers need more skills listed; experienced need them aligned with work
-
-Analyze the skills section and cross-reference with experience and projects:
-
-1. Check if skills mentioned in experience and projects are listed in the skills section
-2. Identify skills used in exp/proj but NOT in skills list (missing)
-3. Identify skills in skills list but NOT used in exp/proj (redundant)
-4. Evaluate skill variety and relevance
-
-Return a JSON object with:
-{
-    "total_count": number,
-    "skills_list": ["skill1", "skill2"],
-    "listed_in_exp_projects": ["skill1", "skill2"],
-    "missing_from_skills": ["skill1", "skill2"],
-    "redundant_skills": ["skill1", "skill2"],
-    "issues": [{"issue": "description", "severity": "high/medium/low", "reason": "explanation"}],
-    "suggestions": ["specific recruiter-focused suggestion: 'You used X in your project but didn't list it in skills - add it for ATS visibility'"]
-}
-
-Evaluation Criteria:
-- Missing skills (high severity): Skills explicitly used in projects/experience but not listed
-- Redundant skills (low severity): Listed but never mentioned in exp/proj
-- Low count (medium): Less than 10 skills might be too few
-- No categorization: Skills grouped by type (languages, frameworks, tools) is better
-
-Analyze skills and return a JSON object."""
-
-
-def analyze_skills(resume) -> SkillsAnalysis:
-    """Analyze skills with cross-reference to experience and projects"""
-
+def analyze_skills(resume, target_tier: str = "STANDARD"):
+    """Analyze skills with cross-reference to experience and projects using externalized prompts."""
+    tier_context = target_tier.upper().replace(" ", "_")
     skills_list = resume.skills or []
     total_count = len(skills_list)
 
-    # Use LLM for more accurate cross-reference
-    prompt = f"""{SKILLS_ANALYZER_PROMPT}
-
-Resume Skills:
-{json.dumps(skills_list, indent=2)}
-
-Experience Descriptions:
-{json.dumps([desc for exp in (resume.experience or []) for desc in (exp.descriptions or [])], indent=2)}
-
-Project Descriptions:
-{json.dumps([desc for proj in (resume.projects or []) for desc in (proj.descriptions or [])], indent=2)}
-
-Return a JSON object with the analysis."""
+    # Use LangChain prompt template
+    prompt = get_skills_prompt(target_tier)
+    formatted_data = format_skills_data(skills_list, resume.experience, resume.projects)
+    formatted_prompt = prompt.format(
+        skills_list=formatted_data["skills_list"],
+        exp_descriptions=formatted_data["exp_descriptions"],
+        proj_descriptions=formatted_data["proj_descriptions"],
+    )
 
     try:
-        response = llm.invoke(prompt)
+        response = llm.invoke(formatted_prompt)
         json_str = response.content.strip()
 
         # Clean up markdown
@@ -74,71 +35,27 @@ Return a JSON object with the analysis."""
 
         analysis = json.loads(json_str)
 
-        # Calculate score (out of 15) - MORE LENIENT
-        score = 15.0
-
-        # Only deduct for critical issues (truly missing skills that are core)
-        missing_count = len(analysis.get("missing_from_skills", []))
-        if missing_count > 5:  # Only if more than 5 truly missing
-            score -= min(2.0, (missing_count - 5) * 0.3)
-
-        # Be lenient on skill count
-        if total_count < 5:
-            score -= 2.0
-        elif total_count < 10:
-            score -= 0.5
-
-        # Don't penalize for "redundant" skills - listing extra skills is fine
-        # This is actually good, not bad
-
         return SkillsAnalysis(
             total_count=total_count,
             skills_list=skills_list,
             listed_in_exp_projects=analysis.get("listed_in_exp_projects", []),
             missing_from_skills=analysis.get("missing_from_skills", []),
-            redundant_skills=[],  # Don't flag as issue
-            issues=[
-                AnalysisIssue(
-                    issue="Consider adding any missing skills from projects",
-                    severity="low",
-                    reason="Some project technologies may not be listed",
-                )
-            ]
-            if missing_count > 0
-            else [],
-            suggestions=analysis.get("suggestions", [])[:1]
-            if analysis.get("suggestions")
-            else [],
-            score=max(0, score),
+            redundant_skills=analysis.get("redundant_skills", []),
+            issues=[AnalysisIssue(**i) if isinstance(i, dict) else i for i in analysis.get("issues", [])],
+            suggestions=analysis.get("suggestions", [])[:3],
+            score=max(0, float(analysis.get("score", 12.0))),
         )
 
     except Exception as e:
-        # Default good score if skills exist
-        if total_count > 0:
-            return SkillsAnalysis(
-                total_count=total_count,
-                skills_list=skills_list,
-                listed_in_exp_projects=[],
-                missing_from_skills=[],
-                redundant_skills=[],
-                issues=[],
-                suggestions=[],
-                score=14.0,  # Good default if skills present
-            )
-        else:
-            return SkillsAnalysis(
-                total_count=0,
-                skills_list=[],
-                listed_in_exp_projects=[],
-                missing_from_skills=[],
-                redundant_skills=[],
-                issues=[
-                    AnalysisIssue(
-                        issue="No skills listed",
-                        severity="high",
-                        reason="Skills section is empty",
-                    )
-                ],
-                suggestions=["Add a skills section with your technical competencies"],
-                score=5.0,
-            )
+        print(f"Skills analysis fallback triggered: {e}")
+        # Default fallback
+        return SkillsAnalysis(
+            total_count=total_count,
+            skills_list=skills_list,
+            listed_in_exp_projects=[],
+            missing_from_skills=[],
+            redundant_skills=[],
+            issues=[AnalysisIssue(issue="Analyzer fallback", severity="low", reason=str(e))] if total_count > 0 else [AnalysisIssue(issue="No skills", severity="high", reason="Empty section")],
+            suggestions=["Add a clear skills section"] if total_count == 0 else [],
+            score=10.0 if total_count > 0 else 5.0,
+        )

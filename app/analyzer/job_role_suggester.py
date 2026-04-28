@@ -1,51 +1,22 @@
+"""Job role suggester using LangChain and externalized prompts."""
 import json
 from ..llm.client import llm
-from .schemas import JobRoleSuggestion
+from ..analyzer.schemas import JobRoleSuggestion
+from .prompts.job_role_suggester_prompts import get_job_role_prompt, format_job_role_data
 
 
-JOB_ROLE_PROMPT = """You are a career advisor and resume analysis expert.
-
-Based on the resume data (skills, experience, projects), suggest suitable job roles.
-
-Analysis Criteria:
-1. Match skills to job roles (technical skills, soft skills)
-2. Consider experience level and type
-3. Look at project technologies for specialization
-4. Factor in total years of experience
-
-For each suggested role, return a JSON object with:
-{
-    "role": "Job Role Title",
-    "match_score": number (0-10),
-    "reasoning": "Why this role fits based on skills/experience",
-    "suggestions": ["How to tailor resume for this role"]
-}
-
-Requirements:
-- Suggest minimum 5 job roles
-- Include both entry-level and senior roles if applicable
-- Consider popular tech roles: Software Engineer, Data Scientist, ML Engineer, DevOps, Full Stack, etc.
-- Provide match score based on how well resume fits the role
-- Reasoning should reference specific skills/experience from resume
-
-Return a JSON array of at least 5 job role suggestions sorted by match score (highest first)."""
-
-
-def suggest_job_roles(resume) -> list[JobRoleSuggestion]:
-    """Suggest job roles based on resume data"""
-
+def suggest_job_roles(resume, tier="STANDARD") -> list[JobRoleSuggestion]:
+    """Suggest job roles based on resume data using externalized prompts."""
     # Prepare summary data for LLM
     skills = resume.skills or []
 
     exp_summary = []
     for exp in resume.experience or []:
-        exp_summary.append(
-            {
-                "title": exp.title,
-                "company": exp.company,
-                "descriptions": exp.descriptions[:2],  # First 2 bullets
-            }
-        )
+        exp_summary.append({
+            "title": exp.title,
+            "company": exp.company,
+            "descriptions": exp.descriptions[:2],  # First 2 bullets
+        })
 
     proj_summary = []
     for proj in resume.projects or []:
@@ -53,21 +24,13 @@ def suggest_job_roles(resume) -> list[JobRoleSuggestion]:
 
     total_years = resume.total_years_experience or 0
 
-    prompt = f"""{JOB_ROLE_PROMPT}
-
-Resume Data:
-Skills: {json.dumps(skills, indent=2)}
-
-Experience ({total_years} years):
-{json.dumps(exp_summary, indent=2)}
-
-Projects:
-{json.dumps(proj_summary, indent=2)}
-
-Return a JSON array of at least 5 job role suggestions."""
+    # Use LangChain prompt template
+    prompt = get_job_role_prompt(tier)
+    formatted_data = format_job_role_data(skills, exp_summary, proj_summary, total_years)
+    formatted_prompt = prompt.format(**formatted_data)
 
     try:
-        response = llm.invoke(prompt)
+        response = llm.invoke(formatted_prompt)
         json_str = response.content.strip()
 
         # Clean up markdown

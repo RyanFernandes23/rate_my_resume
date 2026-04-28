@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -25,6 +25,7 @@ from app.analyzer import analyze_resume
 from app.analyzer.schemas import ResumeAnalysis
 from app.llm.schema import Resume
 from app.routers import auth, credits, payments, history
+from app.dependencies import verify_premium_user, get_optional_user
 
 app = FastAPI(title="Rate My Resume API")
 
@@ -35,27 +36,14 @@ app.include_router(history.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
 
 
-def check_user_credits(user_id: str) -> int:
-    """Check user's current credit balance"""
-    from app.db import service_supabase
-    
-    response = (
-        service_supabase.table("user_credits")
-        .select("credits")
-        .eq("user_id", user_id)
-        .execute()
-    )
-    
-    if response.data:
-        return response.data[0]["credits"]
-    return 0
+# Moved to app.dependencies
 
 
 def deduct_user_credit(user_id: str, description: str = "Resume analysis") -> bool:
@@ -208,6 +196,21 @@ def transform_to_frontend_format(
     return {
         "total_score": sb.total_score,
         "total_percentage": sb.converted_percentage,
+        "score_breakdown": {
+            "basic_info_score": sb.basic_info_score,
+            "experience_score": sb.experience_score,
+            "projects_score": sb.projects_score,
+            "skills_score": sb.skills_score,
+            "education_score": sb.education_score,
+            "achievements_hobbies_score": sb.achievements_hobbies_score,
+            "certifications_score": sb.certifications_score,
+            "job_role_fit_score": sb.job_role_fit_score,
+            "total_score": sb.total_score,
+            "total_percentage": sb.total_percentage,
+            "converted_percentage": sb.converted_percentage,
+            "benchmark_grade": sb.benchmark_grade,
+            "target_tier": sb.target_tier,
+        },
         "is_valid": len(validation_errors) == 0,
         "validation_errors": validation_errors,
         "strengths": analysis.strengths,
@@ -224,7 +227,7 @@ def transform_to_frontend_format(
                         "bullet_index": s.bullet_index,
                         "original_bullet": s.original_bullet,
                         "context": s.context,
-                        "suggestion": s.suggestion
+                        "advice": s.advice
                     }
                     for s in exp.suggestions
                 ],
@@ -244,7 +247,7 @@ def transform_to_frontend_format(
                             "bullet_index": s.bullet_index,
                             "original_bullet": s.original_bullet,
                             "context": s.context,
-                            "suggestion": s.suggestion
+                            "advice": s.advice
                         }
                         for s in proj.suggestions
                     ],
@@ -286,7 +289,7 @@ async def analyze_resume_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
     target_tier: str = "Standard Enterprise",
-    authorization: Optional[str] = Header(None),
+    current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """
     Analyze a resume PDF or DOCX file with optional JD and target tier.
@@ -299,22 +302,19 @@ async def analyze_resume_endpoint(
     """
     
     # ============================================================
-    # STEP 1: AUTHENTICATION
+    # STEP 1: AUTH & CREDIT CHECK
     # ============================================================
-    user_id = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        try:
-            from jose import jwt
-            from app.db import settings
-
-            payload = jwt.decode(
-                token, settings.supabase_jwt_secret, algorithms=["HS256"]
+    user_id = current_user.get("id") if current_user else None
+    
+    if user_id:
+        from app.dependencies import check_user_credits
+        credits_before = check_user_credits(user_id)
+        if credits_before < 1:
+            raise HTTPException(
+                status_code=402, 
+                detail={"error": "insufficient_credits", "credits": credits_before}
             )
-            user_id = payload.get("sub")
-            logger.info(f"Authenticated user: {user_id}")
-        except Exception as e:
-            logger.warning(f"Token verification failed: {e}")
+        logger.info(f"User {user_id} starting analysis with {credits_before} credits")
     
     # ============================================================
     # STEP 2: FILE VALIDATION (Do this BEFORE touching credits)
@@ -339,21 +339,6 @@ async def analyze_resume_endpoint(
     # ============================================================
     # STEP 3: CREDIT CHECK (Without deducting)
     # ============================================================
-    credits_before = None
-    if user_id:
-        credits_before = check_user_credits(user_id)
-        logger.info(f"User {user_id} credits before analysis: {credits_before}")
-        
-        if credits_before < 1:
-            logger.warning(f"Insufficient credits for user {user_id}")
-            raise HTTPException(
-                status_code=402, 
-                detail={"error": "insufficient_credits", "credits": credits_before}
-            )
-    
-    # ============================================================
-    # STEP 4: PROCESS RESUME
-    # ============================================================
     tmp_path = None
     credit_deducted = False
     
@@ -366,100 +351,105 @@ async def analyze_resume_endpoint(
             tmp_file.write(content)
             tmp_path = tmp_file.name
         
-        logger.info(f"Step 1: Extracting markdown from {file.filename}")
-        markdown = extract(tmp_path)
-        logger.info(f"Extracted {len(markdown)} characters")
-        
-        if len(markdown) < 50:
-            raise ValueError("Could not extract meaningful text from file")
-        
-        logger.info("Step 2: Parsing resume with LLM")
-        resume = extract_resume(markdown)
-        logger.info(
-            f"Parsed resume: {resume.name}, "
-            f"Skills: {len(resume.skills)}, "
-            f"Experience: {len(resume.experience)}"
-        )
-        
-        logger.info(
-            f"Step 3: Analyzing resume (Tier: {target_tier}, "
-            f"JD Provided: {bool(jd)})"
-        )
-        analysis = analyze_resume(resume, jd=jd, target_tier=target_tier)
-        logger.info(
-            f"Analysis complete. Score: {analysis.score_breakdown.total_score}/90"
-        )
-        
-        logger.info("Step 4: Transforming to frontend format")
-        result = transform_to_frontend_format(analysis, resume=resume, page_count=1)
-        
-        # ============================================================
-        # STEP 5: EXTRACT ACTIONABLE SUGGESTIONS FOR BATCH REWRITE
-        # ============================================================
-        actionable_suggestions = []
-        for section in result.get('sections', []):
-            if section['name'] in ('Experience', 'Projects'):
-                section_key = section['name'].lower()
-                for entry_idx, entry in enumerate(result.get(f'{section_key}_analysis', [])):
-                    # Handle both structured (new) and string (legacy) formats
-                    for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
-                        if isinstance(sug_item, dict):
-                            # New structured format: {bullet_index, original_bullet, context, suggestion}
-                            actionable_suggestions.append({
-                                "section": section_key,
-                                "entry_index": entry_idx,
-                                "bullet_index": sug_item.get("bullet_index", bullet_idx),
-                                "bullet": sug_item.get("original_bullet", ""),
-                                "context": sug_item.get("context"),
-                                "suggestion": sug_item.get("suggestion", "")
-                            })
-                        else:
-                            # Legacy string format - extract with regex
-                            match = re.search(r'["\'](.*?)["\']', str(sug_item))
-                            if match:
-                                original_bullet = match.group(1)
-                            else:
-                                original_bullet = str(sug_item)
-                            actionable_suggestions.append({
-                                "section": section_key,
-                                "entry_index": entry_idx,
-                                "bullet_index": bullet_idx,
-                                "bullet": original_bullet,
-                                "suggestion": str(sug_item)
-                            })
-        
-        if actionable_suggestions:
-            logger.info(f"Found {len(actionable_suggestions)} actionable suggestions to rewrite")
-            from app.analyzer.batch_rewriter import batch_rewrite_suggestions
-            rewrites = batch_rewrite_suggestions(actionable_suggestions)
+        def process_resume_sync():
+            logger.info(f"Step 1: Extracting markdown from {file.filename}")
+            markdown = extract(tmp_path)
+            logger.info(f"Extracted {len(markdown)} characters")
             
-            for sug in actionable_suggestions:
-                section_key = sug['section']
-                entry_idx = sug['entry_index']
-                bullet_idx = sug['bullet_index']
+            if len(markdown) < 50:
+                raise ValueError("Could not extract meaningful text from file")
+            
+            logger.info("Step 2: Parsing resume with LLM")
+            resume = extract_resume(markdown)
+            logger.info(
+                f"Parsed resume: {resume.name}, "
+                f"Skills: {len(resume.skills)}, "
+                f"Experience: {len(resume.experience)}"
+            )
+            
+            logger.info(
+                f"Step 3: Analyzing resume (Tier: {target_tier}, "
+                f"JD Provided: {bool(jd)})"
+            )
+            analysis = analyze_resume(resume, jd=jd, target_tier=target_tier)
+            logger.info(
+                f"Analysis complete. Score: {analysis.score_breakdown.total_score}/90"
+            )
+            
+            logger.info("Step 4: Transforming to frontend format")
+            result = transform_to_frontend_format(analysis, resume=resume, page_count=1)
+            
+            # ============================================================
+            # STEP 5: EXTRACT ACTIONABLE SUGGESTIONS FOR BATCH REWRITE
+            # ============================================================
+            actionable_suggestions = []
+            for section in result.get('sections', []):
+                if section['name'] in ('Experience', 'Projects'):
+                    section_key = section['name'].lower()
+                    for entry_idx, entry in enumerate(result.get(f'{section_key}_analysis', [])):
+                        # Handle both structured (new) and string (legacy) formats
+                        for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
+                            if isinstance(sug_item, dict):
+                                # New structured format: {bullet_index, original_bullet, context, suggestion}
+                                actionable_suggestions.append({
+                                    "section": section_key,
+                                    "entry_index": entry_idx,
+                                    "bullet_index": sug_item.get("bullet_index", bullet_idx),
+                                    "bullet": sug_item.get("original_bullet", ""),
+                                    "context": sug_item.get("context"),
+                                    "advice": sug_item.get("advice", "")
+                                })
+                            else:
+                                # Legacy string format - extract with regex
+                                match = re.search(r'["\'](.*?)["\']', str(sug_item))
+                                if match:
+                                    original_bullet = match.group(1)
+                                else:
+                                    original_bullet = str(sug_item)
+                                actionable_suggestions.append({
+                                    "section": section_key,
+                                    "entry_index": entry_idx,
+                                    "bullet_index": bullet_idx,
+                                    "bullet": original_bullet,
+                                    "advice": str(sug_item)
+                                })
+            
+            if actionable_suggestions:
+                logger.info(f"Found {len(actionable_suggestions)} actionable suggestions to rewrite")
+                from app.analyzer.batch_rewriter import batch_rewrite_suggestions
+                rewrites = batch_rewrite_suggestions(actionable_suggestions, tier=target_tier)
+                
+                for sug in actionable_suggestions:
+                    section_key = sug['section']
+                    entry_idx = sug['entry_index']
+                    bullet_idx = sug['bullet_index']
 
-                # Validate indices before accessing
-                section_analysis = result.get(f'{section_key}_analysis', [])
-                if entry_idx >= len(section_analysis):
-                    logger.warning(f"Skipping rewrite - entry_idx {entry_idx} out of range for {section_key}")
-                    continue
-                
-                entry_suggestions = section_analysis[entry_idx].get('suggestions', [])
-                if bullet_idx >= len(entry_suggestions):
-                    logger.warning(f"Skipping rewrite - bullet_idx {bullet_idx} out of range for entry {entry_idx}")
-                    continue
-                
-                # Enrich dict-formatted suggestions with rewrites (don't skip!)
-                if isinstance(entry_suggestions[bullet_idx], dict):
-                    entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(
-                        f"{section_key}__{entry_idx}__{bullet_idx}", []
-                    )
-                elif isinstance(entry_suggestions[bullet_idx], str):
-                    entry_suggestions[bullet_idx] = {
-                        "original_bullet": sug['bullet'],
-                        "suggestion": entry_suggestions[bullet_idx],
-                        "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
-                    }
+                    # Validate indices before accessing
+                    section_analysis = result.get(f'{section_key}_analysis', [])
+                    if entry_idx >= len(section_analysis):
+                        logger.warning(f"Skipping rewrite - entry_idx {entry_idx} out of range for {section_key}")
+                        continue
+                    
+                    entry_suggestions = section_analysis[entry_idx].get('suggestions', [])
+                    if bullet_idx >= len(entry_suggestions):
+                        logger.warning(f"Skipping rewrite - bullet_idx {bullet_idx} out of range for entry {entry_idx}")
+                        continue
+                    
+                    # Enrich dict-formatted suggestions with rewrites (don't skip!)
+                    if isinstance(entry_suggestions[bullet_idx], dict):
+                        entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(
+                            f"{section_key}__{entry_idx}__{bullet_idx}", []
+                        )
+                    elif isinstance(entry_suggestions[bullet_idx], str):
+                        entry_suggestions[bullet_idx] = {
+                            "original_bullet": sug['bullet'],
+                            "advice": entry_suggestions[bullet_idx],
+                            "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
+                        }
+            return result
+        
+        from fastapi.concurrency import run_in_threadpool
+        result = await run_in_threadpool(process_resume_sync)
         
         # ============================================================
         # STEP 6: DEDUCT CREDIT LAST (Only after successful analysis)
@@ -475,8 +465,6 @@ async def analyze_resume_endpoint(
                         detail="Failed to process payment. Please try again."
                     )
                 credit_deducted = True
-                credits_after = check_user_credits(user_id)
-                logger.info(f"User {user_id} credits after analysis: {credits_after}")
             except Exception as e:
                 # Credit deduction failed AFTER analysis - this is critical
                 logger.error(f"Failed to deduct credit after successful analysis: {e}")
@@ -487,6 +475,7 @@ async def analyze_resume_endpoint(
         # STEP 7: SAVE ANALYSIS TO SUPABASE (After credit attempt)
         # ============================================================
         analysis_id = None
+        credits_after = None
         if user_id and credit_deducted:
             try:
                 from app.db import service_supabase
@@ -501,8 +490,12 @@ async def analyze_resume_endpoint(
                 if db_response.data:
                     analysis_id = db_response.data[0]["id"]
                     logger.info(f"Analysis saved with id {analysis_id}")
+                
+                # Also get updated credits
+                credits_after = check_user_credits(user_id)
+                logger.info(f"User {user_id} credits after analysis: {credits_after}")
             except Exception as e:
-                logger.error(f"Failed to save analysis: {e}")
+                logger.error(f"Failed to save analysis or fetch credits: {e}")
                 # Analysis delivered but not saved - don't throw, user got value
         
         logger.info(
@@ -513,7 +506,8 @@ async def analyze_resume_endpoint(
         result_for_frontend = {
             "analysis_id": analysis_id,
             "analysis_data": result,
-            "saved_to_history": bool(analysis_id)
+            "saved_to_history": bool(analysis_id),
+            "remaining_credits": credits_after
         }
         
         return JSONResponse(content=result_for_frontend)
@@ -566,8 +560,12 @@ class RewriteRequest(BaseModel):
 @app.post("/api/rewrite")
 async def rewrite_bullet_endpoint(request: RewriteRequest):
     from .analyzer.rewriter import rewrite_bullet
+    from fastapi.concurrency import run_in_threadpool
 
-    result = rewrite_bullet(request.bullet, request.suggestion, request.target_tier)
+    def run_rewrite_sync():
+        return rewrite_bullet(request.bullet, request.suggestion, request.target_tier)
+
+    result = await run_in_threadpool(run_rewrite_sync)
     return result
 
 
