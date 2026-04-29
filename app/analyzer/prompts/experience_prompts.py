@@ -12,13 +12,13 @@ For each experience entry, your response must include:
 4. "good_things": List of 1-3 specific strengths found in the bullets.
 5. "recommendation": Either "keep" or "revise".
 6. "suggestions": A list of bullet-specific suggestions. Each suggestion should have:
-   - "bullet_index": The index of the bullet.
-   - "original_bullet": The original text.
-   - "context": Why this matters for {tier}.
-   - "advice": Direct, conversational feedback about this specific bullet (e.g., "Hey, I read this bullet but I don't see any impact metrics. Try to quantify your results to show the recruiter the scale of your work.").
-   - "rewrites": A list of 3 objects, each with:
-     - "label": One of ["Action-Oriented", "Data-Driven", "Leadership/Impact"].
-     - "content": A high-quality rewritten version of the bullet based on the advice.
+    - "bullet_index": The index of the bullet.
+    - "original_bullet": The original text.
+    - "context": Why this matters for {tier}.
+    - "advice": Specific, actionable feedback about this bullet. Be direct - if the bullet is good, say so. If it needs work, explain exactly what's missing and why it matters.
+    - "rewrites": (OPTIONAL) Only include if the bullet genuinely needs improvement. Each rewrite should have:
+      - "label": A short description of the rewrite approach (e.g., "Quantified impact", "Added technical depth", "Clarified outcome").
+      - "content": A rewritten version that actually improves the bullet. Use REAL metrics if you can infer them from context, otherwise describe what metric the user should add without using placeholder tokens.
 
 {tier_specific_guidance}
 
@@ -31,9 +31,9 @@ SCORING_RUBRIC (STRICT):
 General Guidelines:
 - BE CRITICAL. A 25/25 should be extremely rare, reserved for "Big Tech" level lead engineers or equivalent.
 - PENALIZE HEAVILY (-5 to -10 points) if bullets lack quantifiable metrics (%, $, numbers).
-- If bullets lack metrics, suggest appropriate placeholders ([X]%, [Y]k).
+- If bullets lack metrics, provide concrete advice on WHAT metric would be relevant (e.g., "Add specific metrics like percentage improvement, time saved, or users impacted").
 - Mention missing TECHNICAL DEPTH relevant to {tier}.
-- Never invent absolute figures; use placeholders.
+- Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric the user should add (e.g., "Add performance improvement percentage" instead of "[X]%").
 
 IMPORTANT: Output MUST be a valid JSON object with a key "entries" which is a list of objects, one for each experience entry.
 

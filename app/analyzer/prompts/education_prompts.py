@@ -42,7 +42,7 @@ For each education entry, return a JSON object with:
         "reasoning": "explanation"
     }}}},
     "issues": [{{{{ "issue": "description", "severity": "high/medium/low", "reason": "explanation" }}}}],
-    "suggestions": ["Direct, conversational feedback (e.g., 'Hey, I see you didn't list any relevant coursework. For {tier}, you should mention topics like Data Structures or Machine Learning to show academic depth.')"]
+    "suggestions": ["Specific feedback about this education entry (e.g., 'Your degree is relevant for {tier}. Consider adding coursework like Data Structures or Machine Learning to show technical depth in your field.')"]
 }}}}
 
 Education Data:

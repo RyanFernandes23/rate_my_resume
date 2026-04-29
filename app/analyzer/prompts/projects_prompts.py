@@ -12,13 +12,13 @@ For each project entry, your response must include:
 4. "good_things": List of 1-3 specific strengths found in the bullets.
 5. "recommendation": Either "keep" or "revise".
 6. "suggestions": A list of bullet-specific suggestions. Each suggestion should have:
-   - "bullet_index": The index of the bullet.
-   - "original_bullet": The original text.
-   - "context": Why this matters for {tier}.
-   - "advice": Direct, conversational feedback about this specific bullet (e.g., "Hey, I see you built a Vision Transformer from scratch. That's technically impressive! However, you should mention the dataset size and accuracy to prove its real-world performance.").
-   - "rewrites": A list of 3 objects, each with:
-     - "label": One of ["Action-Oriented", "Data-Driven", "Leadership/Impact"].
-     - "content": A high-quality rewritten version of the bullet based on the advice.
+    - "bullet_index": The index of the bullet.
+    - "original_bullet": The original text.
+    - "context": Why this matters for {tier}.
+    - "advice": Specific, actionable feedback about this bullet. Be direct - if the bullet is good, say so. If it needs work, explain exactly what's missing and why it matters.
+    - "rewrites": (OPTIONAL) Only include if the bullet genuinely needs improvement. Each rewrite should have:
+      - "label": A short description of the rewrite approach (e.g., "Quantified impact", "Added technical depth", "Clarified outcome").
+      - "content": A rewritten version that actually improves the bullet. Use REAL metrics if you can infer them from context, otherwise describe what metric the user should add without using placeholder tokens.
 
 {tier_specific_guidance}
 
@@ -31,8 +31,8 @@ SCORING_RUBRIC (STRICT):
 General Guidelines:
 - BE HIGHLY CRITICAL. Penalize heavily if the project looks like a generic classroom assignment.
 - Focus on technical complexity and individual contribution.
-- If bullets lack metrics, suggest appropriate placeholders ([X]%, [Y]k).
-- Never invent absolute figures; use placeholders.
+- If bullets lack metrics, provide concrete advice on WHAT metric would be relevant (e.g., "Add metrics like accuracy percentage, users served, or performance improvement").
+- Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric the user should add (e.g., "Add accuracy or dataset size" instead of "[X]%").
 
 IMPORTANT: Output MUST be a valid JSON object with a key "entries" which is a list of objects, one for each project entry.
 

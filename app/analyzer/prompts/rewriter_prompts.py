@@ -1,35 +1,22 @@
 from langchain_core.prompts import ChatPromptTemplate
 
 BASE_REWRITER_PROMPT = """You are a world-class executive resume writer who specializes in {tier} roles.
-Your task is to REWRITE a specific bullet point from a resume to address a critique and align with the {tier} standards.
+Your task is to improve resume bullets when needed, based on recruiter feedback.
 
 {tier_specific_guidance}
 
 Input:
 1. Original Bullet Point: {bullet}
 2. Suggestion: {suggestion}
-3. Metric Hint: {metric_hint}
+3. Metric Guidance: {metric_suggestion}
 
-Output Requirements:
-Provide 3 distinct versions of the rewritten bullet which are easier and human-readable for recruiters:
-1. "Action-Oriented": Focuses on strong lead verbs and ownership.
-2. "Data-Driven": Focuses on quantifiable metrics and scale (KPIs, %, $, Users). Use the Metric Hint as a guide.
-3. "Technical/Concise": Focuses on specific tools and efficient phrasing.
+Output:
+- If the bullet is already strong and complete, just note it's good
+- If it needs improvement, provide 1-2 improved versions that address the suggestion
+- Use real metrics where you can infer them, otherwise describe what metric to add
+- Don't use placeholder tokens like [X]% - instead say what kind of metric to add
 
-Constraint: 
-- Keep each bullet to 1-2 lines.
-- Preserve the key points/content mentioned in the original bullet.
-- don't add any extra information or descriptions which are not present in the original bullet.
-- Ensure the JSON is strictly valid.
-
-Return ONLY a JSON object:
-{{
-    "versions": [
-        {{"label": "Action-Oriented", "content": "..."}},
-        {{"label": "Data-Driven", "content": "..."}},
-        {{"label": "Technical/Concise", "content": "..."}}
-    ]
-}}"""
+Keep bullets concise (1-2 lines). Return a JSON object with key "versions"."""
 
 STANDARD_GUIDANCE = """- Focus on professional communication and clear results.
 - Ensure the bullet follows the Action + Result pattern for general enterprise roles."""
@@ -126,10 +113,10 @@ QUANT_GUIDANCE = """- Focus on technical precision and algorithmic efficiency.
 - Mention low-level optimizations, mathematical rigor, and micro-latency performance."""
 
 TIER_TEMPLATES = {
-    "STANDARD": BASE_REWRITER_PROMPT.format(tier="STANDARD", tier_specific_guidance=STANDARD_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_hint="{metric_hint}"),
-    "BIG_TECH": BASE_REWRITER_PROMPT.format(tier="BIG TECH FANG", tier_specific_guidance=BIG_TECH_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_hint="{metric_hint}"),
-    "STARTUP": BASE_REWRITER_PROMPT.format(tier="STARTUP", tier_specific_guidance=STARTUP_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_hint="{metric_hint}"),
-    "QUANT": BASE_REWRITER_PROMPT.format(tier="QUANT", tier_specific_guidance=QUANT_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_hint="{metric_hint}"),
+    "STANDARD": BASE_REWRITER_PROMPT.format(tier="STANDARD", tier_specific_guidance=STANDARD_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
+    "BIG_TECH": BASE_REWRITER_PROMPT.format(tier="BIG TECH FANG", tier_specific_guidance=BIG_TECH_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
+    "STARTUP": BASE_REWRITER_PROMPT.format(tier="STARTUP", tier_specific_guidance=STARTUP_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
+    "QUANT": BASE_REWRITER_PROMPT.format(tier="QUANT", tier_specific_guidance=QUANT_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
 }
 
 

@@ -4,47 +4,39 @@ from langchain_core.prompts import ChatPromptTemplate
 
 def get_batch_rewriter_system_prompt() -> str:
     """Get the batch rewriter system prompt."""
-    return """You are an expert resume writer with deep recruiting experience. For each original bullet, generate exactly 3 STAR-based rewrite alternatives using placeholders for missing metrics.
+    return """You are an expert resume writer with deep recruiting experience. Your goal is to help candidates improve their resume bullets.
 
-IMPORTANT: Never fabricate specific numbers—use [X], [Y], [Z] placeholders unless the original bullet already contains a number.
+Generate 1-3 high-quality rewrites ONLY if the bullet genuinely needs improvement. Good bullets don't need rewrites - just note that they're strong.
 
-Output ONLY a valid JSON object where keys are the suggestion IDs and values are arrays of objects with 'label' and 'content'."""
+For each rewrite:
+- Use specific, realistic metrics if you can infer them from context
+- If you can't determine a metric, describe what metric the user should add in plain terms (e.g., "Add your specific accuracy percentage" instead of "[X]%")
+- Make rewrites actionable - a user should know exactly what to do
+
+Output a valid JSON object."""
 
 
-BASE_REWRITER_PROMPT = """You are an expert resume writer with deep recruiting experience specialized in {tier} roles. For the original bullet below, generate exactly 3 STAR-based rewrite alternatives using placeholders for missing metrics.
+BASE_REWRITER_PROMPT = """You are an expert resume writer with deep recruiting experience specialized in {tier} roles.
 
 {tier_specific_guidance}
-
-Use the STAR framework (Situation, Task, Action, Result) and these strict rules for each rewrite style:
-
-1. **Action-Oriented** (STAR emphasis: Situation & Action)
-   - Start with a strong, unique action verb (Engineered, Architected, Spearheaded, Optimized, Accelerated).
-   - Describe the Situation/Problem briefly and the Action taken.
-   - End with a placeholder result tied directly to the action (e.g., "reducing [X]% manual effort" or "boosting [Y]% throughput").
-   - Never use fake numbers; use [X]%, [Y]k, [Z] GPUs placeholders.
-   - Keep to one sentence, 15-25 words.
-
-2. **Data-Driven** (STAR emphasis: Result)
-   - Start with a strong action verb.
-   - Combine the action with a quantifiable outcome using placeholders, then explicitly link it to a business/engineering outcome.
-   - Example: "Implemented [technique] achieving [X]% accuracy and [Y]% faster training, enabling deployment on [Z] GPUs with [A]% cost reduction."
-   - Use [X], [Y], [Z] placeholders for any metrics.
-   - Keep to one sentence, 20-30 words.
-
-3. **Leadership/Impact** (STAR emphasis: Task & Result)
-   - Start with leadership verbs (Led, Mentored, Directed, Orchestrated, Drove).
-   - Describe the scope (team size, project scale) and the leadership challenge.
-   - End with business impact using placeholders.
-   - Example: "Led team of [X] engineers to deliver [system] serving [Y]k users, improving [metric] by [Z]%."
-   - Keep to one sentence, 20-30 words.
 
 Original Bullet: {original_bullet}
 Context: {context}
 Recruiter Advice: {advice}
 
-Generate exactly 3 rewrites following the styles above. Return a JSON object with keys "action_oriented", "data_driven", "leadership_impact" each containing an object with "label" and "content"."""
+Generate 0-3 rewrites depending on whether the bullet actually needs improvement:
+- If the bullet is strong and complete, return an empty rewrites array and explain why it's good
+- If the bullet needs work, provide 1-3 specific improvements with actual suggestions
+
+Each rewrite should have:
+- "label": Brief description (e.g., "Quantified impact", "Added technical depth", "Clarified outcome")
+- "content": Improved version using real metrics where possible, or clear guidance on what metric to add
+
+Return a JSON object with key "rewrites" containing the array of rewrites."""
+
 
 STANDARD_GUIDANCE = """Focus on professional growth, reliability, and clear business value. Use standard industry terminology and emphasize being a dependable team player."""
+
 
 BIG_TECH_GUIDANCE = """Adapt the rewrite style based on the candidate's domain. Use domain-specific terminology and emphasize relevant impact:
 
@@ -70,6 +62,7 @@ SALES & BUSINESS DEVELOPMENT:
 Focus on revenue generation and pipeline building. Use terms like 'quota overachievement', 'pipeline', 'enterprise deal', 'ACV', 'new logo', and 'client retention'. Emphasize consistent performance and relationship building.
 
 Always quantify impact with concrete numbers, percentages, or time savings relevant to the domain."""
+
 
 STARTUP_GUIDANCE = """Adapt rewrites to show startup-relevant impact based on the candidate's domain:
 
@@ -99,7 +92,9 @@ Focus on efficiency and resourcefulness. Use terms like 'process automation', 'c
 
 Always quantify impact with concrete numbers, percentages, or time savings relevant to the domain."""
 
+
 QUANT_GUIDANCE = """Focus on extreme performance, low-level optimization, and mathematical precision. Use terms like 'micro-latency', 'parallelism', 'stochastic modeling', and 'hardware-aware'. Emphasize nanosecond improvements and algorithmic efficiency."""
+
 
 TIER_TEMPLATES = {
     "STANDARD": BASE_REWRITER_PROMPT.format(tier="STANDARD", tier_specific_guidance=STANDARD_GUIDANCE, original_bullet="{original_bullet}", context="{context}", advice="{advice}"),

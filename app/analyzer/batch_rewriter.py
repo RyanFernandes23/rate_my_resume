@@ -42,25 +42,38 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
         return []
 
     rewrites = []
-    label_map = {
-        "action_oriented": "Action-Oriented",
-        "data_driven": "Data-Driven",
-        "leadership_impact": "Leadership/Impact",
-    }
-
-    for key, label in label_map.items():
-        if key in data:
-            item = data[key]
-            if isinstance(item, dict) and "content" in item:
-                rewrites.append({
-                    "label": item.get("label", label),
-                    "content": item["content"],
-                })
-            elif isinstance(item, str):
-                rewrites.append({
-                    "label": label,
-                    "content": item,
-                })
+    
+    # Handle new format: {"rewrites": [{"label": "...", "content": "..."}, ...]}
+    if "rewrites" in data:
+        rewrites_list = data["rewrites"]
+        if isinstance(rewrites_list, list):
+            for item in rewrites_list:
+                if isinstance(item, dict) and "content" in item:
+                    rewrites.append({
+                        "label": item.get("label", "Improved"),
+                        "content": item["content"],
+                    })
+    
+    # Handle old format for backward compatibility
+    if not rewrites:
+        label_map = {
+            "action_oriented": "Action-Oriented",
+            "data_driven": "Data-Driven",
+            "leadership_impact": "Leadership/Impact",
+        }
+        for key, label in label_map.items():
+            if key in data:
+                item = data[key]
+                if isinstance(item, dict) and "content" in item:
+                    rewrites.append({
+                        "label": item.get("label", label),
+                        "content": item["content"],
+                    })
+                elif isinstance(item, str):
+                    rewrites.append({
+                        "label": label,
+                        "content": item,
+                    })
 
     return rewrites
 
@@ -102,19 +115,10 @@ def batch_rewrite_suggestions(actionable_suggestions, tier: str = "STANDARD"):
 
         except Exception as e:
             logger.error(f"Error generating rewrites for {suggestion_key}: {e}")
-            # Provide fallback rewrites
             rewrites[suggestion_key] = [
                 {
-                    "label": "Action-Oriented",
-                    "content": f"Spearheaded initiative that improved {sug['bullet'][:50]}... [X]% efficiency",
-                },
-                {
-                    "label": "Data-Driven",
-                    "content": f"Optimized process achieving [X]% improvement in {sug['bullet'][:40]}...",
-                },
-                {
-                    "label": "Leadership/Impact",
-                    "content": f"Led cross-functional team to enhance {sug['bullet'][:50]}... serving [Y]k users",
+                    "label": "Improved",
+                    "content": "Consider revising this bullet to add specific metrics. Add details about the impact of your work.",
                 },
             ]
 

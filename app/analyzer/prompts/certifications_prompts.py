@@ -21,7 +21,7 @@ For each certification, return a JSON object with:
     "organization_issues": ["issue1", "issue2"],
     "date_issues": ["issue1", "issue2"],
     "link_issues": ["issue1", "issue2"],
-    "suggestions": ["Direct, conversational feedback (e.g., 'Hey, I see you have an AWS certification. For {tier}, adding a Kubernetes (CKA) cert would really show you can handle large-scale deployments.')"]
+    "suggestions": ["Specific feedback about this certification (e.g., 'This AWS cert is valuable for {tier} roles. Consider adding a cloud-focused specialty like Solutions Architect Associate to strengthen your profile.')"]
 }}}}
 
 Certifications Data:

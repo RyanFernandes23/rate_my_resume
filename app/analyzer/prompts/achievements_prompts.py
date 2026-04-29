@@ -42,7 +42,7 @@ Return a JSON object with:
 {{{{
     "achievements": [...],
     "hobbies": [...],
-    "suggestions": ["Direct, conversational feedback (e.g., 'Hey, I see you have competitive programming experience. For {tier}, you should definitely highlight your Codeforces rank more prominently to stand out.')"],
+    "suggestions": ["Specific feedback about achievements and hobbies (e.g., 'Your competitive programming experience is a strong signal for {tier} roles. Highlighting your Codeforces rank prominently would help you stand out.')"],
     "score": number (out of 10)
 }}}}
 
