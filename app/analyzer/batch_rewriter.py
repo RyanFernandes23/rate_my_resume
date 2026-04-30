@@ -78,7 +78,7 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
     return rewrites
 
 
-def batch_rewrite_suggestions(actionable_suggestions, tier: str = "STANDARD"):
+def batch_rewrite_suggestions(actionable_suggestions):
     """Generate rewrite options for multiple suggestions using LangChain."""
     rewrites = {}
 
@@ -92,12 +92,11 @@ def batch_rewrite_suggestions(actionable_suggestions, tier: str = "STANDARD"):
         _wait_for_rate_limit()
 
         try:
-            prompt = get_batch_rewriter_prompt(tier)
+            prompt = get_batch_rewriter_prompt()
             formatted_data = format_batch_rewriter_data(
                 original_bullet=sug["bullet"],
                 advice=sug.get("advice", ""),
                 context=sug.get("context", ""),
-                target_tier=tier,
             )
             formatted_prompt = prompt.format(**formatted_data)
 

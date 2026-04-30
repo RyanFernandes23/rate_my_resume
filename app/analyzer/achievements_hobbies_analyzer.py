@@ -5,7 +5,7 @@ from ..analyzer.schemas import AchievementsHobbiesAnalysis, AchievementAnalysis,
 from .prompts.achievements_prompts import get_achievements_prompt, format_achievements_data
 
 
-def analyze_achievements_hobbies(resume, tier="STANDARD"):
+def analyze_achievements_hobbies(resume):
     """Analyze achievements and hobbies (combined node) using externalized prompts."""
     # Prepare data
     achievements = resume.achievements or []
@@ -16,7 +16,7 @@ def analyze_achievements_hobbies(resume, tier="STANDARD"):
     all_hobbies = hobbies + extra_curricular
 
     # Use LangChain prompt template
-    prompt = get_achievements_prompt(tier)
+    prompt = get_achievements_prompt()
     formatted_data = format_achievements_data(achievements, hobbies, extra_curricular)
     formatted_prompt = prompt.format(
         achievements_data=formatted_data["achievements_data"],

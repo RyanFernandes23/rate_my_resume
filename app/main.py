@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import tempfile
@@ -10,8 +10,11 @@ import traceback
 import re
 import hashlib
 from datetime import datetime
+import asyncio
+import json
 
 logging.basicConfig(
+    
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
@@ -41,9 +44,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
 )
-
-
-# Moved to app.dependencies
 
 
 def deduct_user_credit(user_id: str, description: str = "Resume analysis") -> bool:
@@ -97,186 +97,8 @@ def refund_user_credit(user_id: str, reason: str = "Analysis failed") -> bool:
         return False
 
 
-def transform_to_frontend_format(
-    analysis: ResumeAnalysis, resume: Resume = None, page_count: int = 1
-) -> dict:
-    """Transform analyzer output to match frontend expected format"""
-
-    sb = analysis.score_breakdown
-
-    # Validation errors
-    validation_errors = []
-    if analysis.basic_info_analysis:
-        if not analysis.basic_info_analysis.name.is_valid:
-            validation_errors.append("Name is missing or invalid")
-        if not analysis.basic_info_analysis.email.is_valid:
-            validation_errors.append("Email is missing or invalid")
-        if not analysis.basic_info_analysis.phone.is_valid:
-            validation_errors.append("Phone is missing or invalid")
-
-    # Check for missing sections
-    if not analysis.skills_analysis or analysis.skills_analysis.total_count == 0:
-        validation_errors.append("No skills found")
-
-    # Helper to get all suggestions from basic info
-    bi = analysis.basic_info_analysis
-    bi_suggestions = []
-    if bi:
-        bi_suggestions.extend(bi.name.suggestions or [])
-        bi_suggestions.extend(bi.email.suggestions or [])
-        bi_suggestions.extend(bi.phone.suggestions or [])
-        bi_suggestions.extend(bi.links.suggestions or [])
-
-    # Sections analysis for frontend
-    sections = [
-        {
-            "name": "Basic Information",
-            "score": sb.basic_info_score,
-            "max_score": 10,
-            "suggestions": list(dict.fromkeys(bi_suggestions)),
-        },
-        {
-            "name": "Experience",
-            "score": sb.experience_score,
-            "max_score": 25,
-            "suggestions": [],  # Per-entry suggestions are now nested in experience_analysis
-        },
-        {
-            "name": "Projects",
-            "score": sb.projects_score,
-            "max_score": 15,
-            "suggestions": [],  # Per-entry suggestions are now nested in projects_analysis
-        },
-        {
-            "name": "Skills",
-            "score": sb.skills_score,
-            "max_score": 15,
-            "suggestions": analysis.skills_analysis.suggestions
-            if analysis.skills_analysis
-            else [],
-        },
-        {
-            "name": "Education",
-            "score": sb.education_score,
-            "max_score": 10,
-            "suggestions": list(
-                dict.fromkeys(
-                    [
-                        s
-                        for edu in (analysis.education_analysis or [])
-                        for s in edu.suggestions
-                    ]
-                )
-            ),
-        },
-        {
-            "name": "Achievements & Hobbies",
-            "score": sb.achievements_hobbies_score,
-            "max_score": 10,
-            "suggestions": analysis.achievements_hobbies_analysis.suggestions
-            if analysis.achievements_hobbies_analysis
-            else [],
-        },
-        {
-            "name": "Certifications",
-            "score": sb.certifications_score,
-            "max_score": 5,
-            "suggestions": list(
-                dict.fromkeys(
-                    [
-                        s
-                        for cert in (analysis.certifications_analysis or [])
-                        for s in cert.suggestions
-                    ]
-                )
-            ),
-        },
-    ]
-
-    return {
-        "total_score": sb.total_score,
-        "total_percentage": sb.converted_percentage,
-        "score_breakdown": {
-            "basic_info_score": sb.basic_info_score,
-            "experience_score": sb.experience_score,
-            "projects_score": sb.projects_score,
-            "skills_score": sb.skills_score,
-            "education_score": sb.education_score,
-            "achievements_hobbies_score": sb.achievements_hobbies_score,
-            "certifications_score": sb.certifications_score,
-            "job_role_fit_score": sb.job_role_fit_score,
-            "total_score": sb.total_score,
-            "total_percentage": sb.total_percentage,
-            "converted_percentage": sb.converted_percentage,
-            "benchmark_grade": sb.benchmark_grade,
-            "target_tier": sb.target_tier,
-        },
-        "is_valid": len(validation_errors) == 0,
-        "validation_errors": validation_errors,
-        "strengths": analysis.strengths,
-        "areas_for_improvement": analysis.areas_for_improvement,
-        "sections": sections,
-        "experience_analysis": [
-            {
-                "entry_summary": exp.entry_summary,
-                "star_score": exp.star_principle_score,
-                "impact_score": exp.impact_score,
-                "recommendation": exp.recommendation,
-                "suggestions": [
-                    {
-                        "bullet_index": s.bullet_index,
-                        "original_bullet": s.original_bullet,
-                        "context": s.context,
-                        "advice": s.advice
-                    }
-                    for s in exp.suggestions
-                ],
-                "good_things": exp.good_things,
-                "score": exp.score,
-            }
-            for exp in (analysis.experience_analysis or [])
-        ],
-        "projects_analysis": [
-            {
-                "entry_name": proj.entry_name,
-                "star_score": proj.star_principle_score,
-                "impact_score": proj.impact_score,
-                "recommendation": proj.recommendation,
-                "suggestions": [
-                        {
-                            "bullet_index": s.bullet_index,
-                            "original_bullet": s.original_bullet,
-                            "context": s.context,
-                            "advice": s.advice
-                        }
-                        for s in proj.suggestions
-                    ],
-                "good_things": proj.good_things,
-                "score": proj.score,
-            }
-            for proj in (analysis.projects_analysis or [])
-        ],
-        "job_role_suggestions": [
-            {
-                "role": role.role,
-                "match_score": role.match_score,
-                "reasoning": role.reasoning,
-                "suggestions": role.suggestions,
-            }
-            for role in (analysis.job_role_suggestions or [])
-        ],
-        "benchmark_grade": sb.benchmark_grade,
-        "target_tier": sb.target_tier,
-        "jd_analysis": {
-            "match_score": analysis.jd_analysis.match_score,
-            "compatible_roles": analysis.jd_analysis.compatible_roles,
-            "missing_critical_skills": analysis.jd_analysis.missing_critical_skills,
-            "missing_nice_to_have": analysis.jd_analysis.missing_nice_to_have,
-            "tailoring_recommendations": analysis.jd_analysis.tailoring_recommendations,
-        }
-        if analysis.jd_analysis
-        else None,
-    }
+# Import transform_to_frontend_format from utils to avoid circular imports
+from app.utils import transform_to_frontend_format
 
 
 @app.get("/")
@@ -284,292 +106,281 @@ def root():
     return {"message": "Rate My Resume API"}
 
 
+async def event_generator(resume_path, jd, user_id):
+    """Generates progress events for resume analysis."""
+    def send_event(stage, message):
+        yield f"data: {json.dumps({'stage': stage, 'message': message})}\n\n"
+
+    try:
+        async for item in send_event("extraction", "Extracting resume content..."):
+            yield item
+        markdown = extract(resume_path)
+        if len(markdown) < 50: raise ValueError("Could not extract meaningful text from file")
+        
+        async for item in send_event("parsing", "Parsing resume structure..."):
+            yield item
+        resume = extract_resume(markdown)
+        
+        async for item in send_event("analysis", "Analyzing resume content..."):
+            yield item
+        analysis = analyze_resume(resume, jd=jd)
+        
+        async for item in send_event("formatting", "Finalizing audit report..."):
+            yield item
+        result = transform_to_frontend_format(analysis, resume=resume)
+        
+        yield f"data: {json.dumps({'status': 'complete', 'result': result})}\n\n"
+    except Exception as e:
+        logger.error(f"Error in SSE stream: {e}")
+        yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+@app.get("/api/analyze-stream")
+async def analyze_resume_stream(file_path: str, jd: Optional[str] = None, user_id: Optional[str] = None):
+    return StreamingResponse(event_generator(file_path, jd, user_id), media_type="text/event-stream")
+
+
 @app.post("/api/analyze")
 async def analyze_resume_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
-    target_tier: str = "Standard Enterprise",
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
-    """
-    Analyze a resume PDF or DOCX file with optional JD and target tier.
-    Credit flow:
-    1. Validate file
-    2. Check credits (don't deduct yet)
-    3. Process resume
-    4. Deduct credit only after successful analysis
-    5. Refund if analysis fails
-    """
-    
-    # ============================================================
-    # STEP 1: AUTH & CREDIT CHECK
-    # ============================================================
     user_id = current_user.get("id") if current_user else None
-    
     if user_id:
         from app.dependencies import check_user_credits
         credits_before = check_user_credits(user_id)
-        if credits_before < 1:
-            raise HTTPException(
-                status_code=402, 
-                detail={"error": "insufficient_credits", "credits": credits_before}
-            )
-        logger.info(f"User {user_id} starting analysis with {credits_before} credits")
+        if credits_before < 1: raise HTTPException(status_code=402, detail={"error": "insufficient_credits", "credits": credits_before})
     
-    # ============================================================
-    # STEP 2: FILE VALIDATION (Do this BEFORE touching credits)
-    # ============================================================
-    if not file.filename.lower().endswith((".pdf", ".docx")):
-        logger.warning(f"Invalid file type: {file.filename}")
-        raise HTTPException(
-            status_code=400, 
-            detail="Only PDF and DOCX files are supported"
-        )
-    
-    # Read file content
+    if not file.filename.lower().endswith((".pdf", ".docx")): raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
     content = await file.read()
+    if len(content) > 10 * 1024 * 1024: raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB")
     
-    # Check file size (10MB limit)
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=413,
-            detail="File too large. Maximum size is 10MB"
-        )
-    
-    # ============================================================
-    # STEP 3: CREDIT CHECK (Without deducting)
-    # ============================================================
     tmp_path = None
-    credit_deducted = False
-    
     try:
-        # Save file temporarily
-        with tempfile.NamedTemporaryFile(
-            delete=False, 
-            suffix=os.path.splitext(file.filename)[1]
-        ) as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
             tmp_file.write(content)
             tmp_path = tmp_file.name
         
         def process_resume_sync():
-            logger.info(f"Step 1: Extracting markdown from {file.filename}")
             markdown = extract(tmp_path)
-            logger.info(f"Extracted {len(markdown)} characters")
-            
-            if len(markdown) < 50:
-                raise ValueError("Could not extract meaningful text from file")
-            
-            logger.info("Step 2: Parsing resume with LLM")
+            if len(markdown) < 50: raise ValueError("Could not extract meaningful text from file")
             resume = extract_resume(markdown)
-            logger.info(
-                f"Parsed resume: {resume.name}, "
-                f"Skills: {len(resume.skills)}, "
-                f"Experience: {len(resume.experience)}"
-            )
+            analysis = analyze_resume(resume, jd=jd)
+            result = transform_to_frontend_format(analysis, resume=resume)
             
-            logger.info(
-                f"Step 3: Analyzing resume (Tier: {target_tier}, "
-                f"JD Provided: {bool(jd)})"
-            )
-            analysis = analyze_resume(resume, jd=jd, target_tier=target_tier)
-            logger.info(
-                f"Analysis complete. Score: {analysis.score_breakdown.total_score}/90"
-            )
-            
-            logger.info("Step 4: Transforming to frontend format")
-            result = transform_to_frontend_format(analysis, resume=resume, page_count=1)
-            
-            # ============================================================
-            # STEP 5: EXTRACT ACTIONABLE SUGGESTIONS FOR BATCH REWRITE
-            # ============================================================
             actionable_suggestions = []
             for section in result.get('sections', []):
                 if section['name'] in ('Experience', 'Projects'):
                     section_key = section['name'].lower()
                     for entry_idx, entry in enumerate(result.get(f'{section_key}_analysis', [])):
-                        # Handle both structured (new) and string (legacy) formats
                         for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
-                            if isinstance(sug_item, dict):
-                                # New structured format: {bullet_index, original_bullet, context, suggestion}
-                                actionable_suggestions.append({
-                                    "section": section_key,
-                                    "entry_index": entry_idx,
-                                    "bullet_index": sug_item.get("bullet_index", bullet_idx),
-                                    "bullet": sug_item.get("original_bullet", ""),
-                                    "context": sug_item.get("context"),
-                                    "advice": sug_item.get("advice", "")
-                                })
-                            else:
-                                # Legacy string format - extract with regex
-                                match = re.search(r'["\'](.*?)["\']', str(sug_item))
-                                if match:
-                                    original_bullet = match.group(1)
-                                else:
-                                    original_bullet = str(sug_item)
-                                actionable_suggestions.append({
-                                    "section": section_key,
-                                    "entry_index": entry_idx,
-                                    "bullet_index": bullet_idx,
-                                    "bullet": original_bullet,
-                                    "advice": str(sug_item)
-                                })
+                            actionable_suggestions.append({"section": section_key, "entry_index": entry_idx, "bullet_index": bullet_idx, "bullet": sug_item.get("original_bullet", "") if isinstance(sug_item, dict) else str(sug_item), "advice": sug_item.get("advice", "") if isinstance(sug_item, dict) else str(sug_item)})
             
             if actionable_suggestions:
-                logger.info(f"Found {len(actionable_suggestions)} actionable suggestions to rewrite")
                 from app.analyzer.batch_rewriter import batch_rewrite_suggestions
-                rewrites = batch_rewrite_suggestions(actionable_suggestions, tier=target_tier)
-                
+                rewrites = batch_rewrite_suggestions(actionable_suggestions)
                 for sug in actionable_suggestions:
                     section_key = sug['section']
                     entry_idx = sug['entry_index']
                     bullet_idx = sug['bullet_index']
-
-                    # Validate indices before accessing
-                    section_analysis = result.get(f'{section_key}_analysis', [])
-                    if entry_idx >= len(section_analysis):
-                        logger.warning(f"Skipping rewrite - entry_idx {entry_idx} out of range for {section_key}")
-                        continue
-                    
-                    entry_suggestions = section_analysis[entry_idx].get('suggestions', [])
-                    if bullet_idx >= len(entry_suggestions):
-                        logger.warning(f"Skipping rewrite - bullet_idx {bullet_idx} out of range for entry {entry_idx}")
-                        continue
-                    
-                    # Enrich dict-formatted suggestions with rewrites (don't skip!)
-                    if isinstance(entry_suggestions[bullet_idx], dict):
-                        entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(
-                            f"{section_key}__{entry_idx}__{bullet_idx}", []
-                        )
-                    elif isinstance(entry_suggestions[bullet_idx], str):
-                        entry_suggestions[bullet_idx] = {
-                            "original_bullet": sug['bullet'],
-                            "advice": entry_suggestions[bullet_idx],
-                            "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
-                        }
+                    entry_suggestions = result.get(f'{section_key}_analysis', [])[entry_idx].get('suggestions', [])
+                    if isinstance(entry_suggestions[bullet_idx], dict): entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
+                    else: entry_suggestions[bullet_idx] = {"original_bullet": sug['bullet'], "advice": entry_suggestions[bullet_idx], "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])}
             return result
         
         from fastapi.concurrency import run_in_threadpool
-        result = await run_in_threadpool(process_resume_sync)
         
-        # ============================================================
-        # STEP 6: DEDUCT CREDIT LAST (Only after successful analysis)
-        # This ensures users only pay when we actually deliver value
-        # ============================================================
-        credit_deducted = False
+        result = None
+        for attempt in range(3):
+            try:
+                # Enforce a 12s timeout on the processing sync function
+                result = await asyncio.wait_for(run_in_threadpool(process_resume_sync), timeout=12.0)
+                break
+            except asyncio.TimeoutError:
+                logger.warning(f"Analysis attempt {attempt + 1} timed out.")
+                if attempt == 2:
+                    raise HTTPException(status_code=504, detail="Analysis timed out after 3 attempts.")
+            except Exception as e:
+                logger.error(f"Analysis attempt {attempt + 1} failed: {e}")
+                if attempt == 2:
+                    raise HTTPException(status_code=500, detail=f"Analysis failed after 3 attempts: {str(e)}")
+        
+        if result is None:
+            raise HTTPException(status_code=500, detail="Analysis failed.")
+        
+        if user_id:
+            deduct_user_credit(user_id, f"Resume analysis: {file.filename}")
+            
+        analysis_id = None
         if user_id:
             try:
-                success = deduct_user_credit(user_id, f"Resume analysis: {file.filename}")
-                if not success:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Failed to process payment. Please try again."
-                    )
-                credit_deducted = True
-            except Exception as e:
-                # Credit deduction failed AFTER analysis - this is critical
-                logger.error(f"Failed to deduct credit after successful analysis: {e}")
-                # Still return the result, but log the issue
-                # User got the value, we just can't charge them - don't save to history
+                from app.db import service_supabase
+                insert_data = {"user_id": user_id, "file_name": file.filename, "result_json": result}
+                db_response = service_supabase.table("analyses").insert(insert_data).execute()
+                if db_response.data: analysis_id = db_response.data[0]["id"]
+            except: pass
         
-        # ============================================================
-        # STEP 7: SAVE ANALYSIS TO SUPABASE (After credit attempt)
-        # ============================================================
+        return JSONResponse(content={"analysis_id": analysis_id, "analysis_data": result, "saved_to_history": bool(analysis_id)})
+    
+    finally:
+        if tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
+
+
+async def stream_analyze_generator(content: bytes, filename: str, jd: Optional[str], user_id: Optional[str], target_tier: Optional[str] = None):
+    """Async generator for SSE streaming resume analysis."""
+    def emit(stage: str, progress: int, message: str):
+        return f"data: {json.dumps({'stage': stage, 'progress': progress, 'message': message})}\n\n"
+    
+    tmp_path = None
+    try:
+        # Validate file
+        if not filename.lower().endswith((".pdf", ".docx")):
+            yield emit("error", 0, "Only PDF and DOCX files are supported")
+            return
+        
+        # Check size
+        if len(content) > 10 * 1024 * 1024:
+            yield emit("error", 0, "File too large. Maximum size is 10MB")
+            return
+        
+        # Save to temp
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        # Check credits
+        credits_before = 0
+        if user_id:
+            from app.dependencies import check_user_credits
+            credits_before = check_user_credits(user_id)
+            if credits_before < 1:
+                yield emit("credits_error", 0, "Insufficient credits")
+                return
+        
+        yield emit("extract", 5, "Extracting text from file...")
+        
+        from app.extractors import extract
+        from app.llm import extract_resume
+        
+        markdown = extract(tmp_path)
+        if len(markdown) < 50:
+            yield emit("error", 0, "Could not extract meaningful text from file")
+            return
+        
+        yield emit("parse", 15, "Parsing resume structure...")
+        resume = extract_resume(markdown)
+        
+        yield emit("analyze_basic", 25, "Analyzing basic info...")
+        yield emit("analyze_exp", 35, "Analyzing experience...")
+        yield emit("analyze_projects", 45, "Analyzing projects...")
+        yield emit("analyze_skills", 55, "Analyzing skills...")
+        yield emit("analyze_education", 65, "Analyzing education...")
+        yield emit("analyze_cert", 75, "Analyzing certifications...")
+        
+        analysis = analyze_resume(resume, jd=jd)
+        
+        yield emit("format", 85, "Formatting results...")
+        result = transform_to_frontend_format(analysis, resume=resume)
+        
+        # Process rewrites
+        yield emit("rewrite", 92, "Generating improvement suggestions...")
+        actionable_suggestions = []
+        for section in result.get('sections', []):
+            if section['name'] in ('Experience', 'Projects'):
+                section_key = section['name'].lower()
+                for entry_idx, entry in enumerate(result.get(f'{section_key}_analysis', [])):
+                    for bullet_idx, sug_item in enumerate(entry.get('suggestions', [])):
+                        actionable_suggestions.append({
+                            "section": section_key,
+                            "entry_index": entry_idx,
+                            "bullet_index": bullet_idx,
+                            "bullet": sug_item.get("original_bullet", "") if isinstance(sug_item, dict) else str(sug_item),
+                            "advice": sug_item.get("advice", "") if isinstance(sug_item, dict) else str(sug_item)
+                        })
+        
+        if actionable_suggestions:
+            from app.analyzer.batch_rewriter import batch_rewrite_suggestions
+            from fastapi.concurrency import run_in_threadpool
+            
+            rewrites = await run_in_threadpool(batch_rewrite_suggestions, actionable_suggestions)
+            for sug in actionable_suggestions:
+                section_key = sug['section']
+                entry_idx = sug['entry_index']
+                bullet_idx = sug['bullet_index']
+                entry_suggestions = result.get(f'{section_key}_analysis', [])[entry_idx].get('suggestions', [])
+                if isinstance(entry_suggestions[bullet_idx], dict):
+                    entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
+                else:
+                    entry_suggestions[bullet_idx] = {
+                        "original_bullet": sug['bullet'],
+                        "advice": entry_suggestions[bullet_idx],
+                        "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])
+                    }
+        
+        # Deduct credits
+        if user_id:
+            from app.dependencies import deduct_user_credit
+            deduct_user_credit(user_id, f"Resume analysis: {filename}")
+        
+        # Save to history
         analysis_id = None
-        credits_after = None
-        if user_id and credit_deducted:
+        if user_id:
             try:
                 from app.db import service_supabase
-                insert_data = {
-                    "user_id": user_id,
-                    "file_name": file.filename,
-                    "target_tier": target_tier,
-                    "jd_hash": hashlib.md5(jd.encode()).hexdigest() if jd else None,
-                    "result_json": result
-                }
+                insert_data = {"user_id": user_id, "file_name": filename, "result_json": result}
                 db_response = service_supabase.table("analyses").insert(insert_data).execute()
                 if db_response.data:
                     analysis_id = db_response.data[0]["id"]
-                    logger.info(f"Analysis saved with id {analysis_id}")
-                
-                # Also get updated credits
-                credits_after = check_user_credits(user_id)
-                logger.info(f"User {user_id} credits after analysis: {credits_after}")
-            except Exception as e:
-                logger.error(f"Failed to save analysis or fetch credits: {e}")
-                # Analysis delivered but not saved - don't throw, user got value
+            except:
+                pass
         
-        logger.info(
-            f"Response prepared with "
-            f"{len(result.get('job_role_suggestions', []))} job suggestions"
-        )
-        
-        result_for_frontend = {
-            "analysis_id": analysis_id,
-            "analysis_data": result,
-            "saved_to_history": bool(analysis_id),
-            "remaining_credits": credits_after
-        }
-        
-        return JSONResponse(content=result_for_frontend)
+        yield emit("complete", 100, "Analysis complete!")
+        yield f"data: {json.dumps({'status': 'complete', 'result': result, 'analysis_id': analysis_id, 'saved_to_history': bool(analysis_id), 'credits_remaining': credits_before - 1})}\n\n"
     
-    except ValueError as e:
-        # Specific validation errors that users can understand
-        error_msg = str(e)
-        if "exceeds" in error_msg.lower() or "pages" in error_msg.lower():
-            raise HTTPException(
-                status_code=400,
-                detail={"error": "page_limit", "message": error_msg}
-            )
-        raise HTTPException(status_code=400, detail=str(e))
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-        
     except Exception as e:
-        error_trace = traceback.format_exc()
-        logger.error(f"Error during analysis: {str(e)}\n{error_trace}")
-        
-        # ============================================================
-        # NO REFUND NEEDED
-        # Credit is only deducted AFTER successful analysis
-        # If we hit error here, credit was never deducted
-        # ============================================================
-        
-        raise HTTPException(
-            status_code=500, 
-            detail="Failed to analyze resume. Please try again."
-        )
-        
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"SSE stream error: {e}\n{tb}")
+        yield emit("error", 0, str(e))
+        yield f"data: {json.dumps({'status': 'error', 'message': str(e), 'traceback': tb})}\n\n"
+    
     finally:
-        # Clean up temp file
         if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-                logger.debug(f"Cleaned up temp file: {tmp_path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up temp file: {e}")
+            os.remove(tmp_path)
+
+
+@app.post("/api/analyze/stream")
+async def analyze_resume_stream_endpoint(
+    file: UploadFile = File(...),
+    jd: Optional[str] = None,
+    target_tier: Optional[str] = None,
+    current_user: Optional[dict] = Depends(get_optional_user),
+):
+    user_id = current_user.get("id") if current_user else None
+    
+    # Read file content here while the file is still open
+    content = await file.read()
+    
+    return StreamingResponse(
+        stream_analyze_generator(content, file.filename, jd, user_id, target_tier),
+        media_type="text/event-stream"
+    )
 
 
 class RewriteRequest(BaseModel):
     bullet: str
     suggestion: str
-    target_tier: str = "Standard Enterprise"
+    target_tier: Optional[str] = None
 
 
 @app.post("/api/rewrite")
 async def rewrite_bullet_endpoint(request: RewriteRequest):
     from .analyzer.rewriter import rewrite_bullet
     from fastapi.concurrency import run_in_threadpool
-
-    def run_rewrite_sync():
-        return rewrite_bullet(request.bullet, request.suggestion, request.target_tier)
-
-    result = await run_in_threadpool(run_rewrite_sync)
-    return result
+    # target_tier is accepted but not currently used by the rewriter
+    return await run_in_threadpool(lambda: rewrite_bullet(request.bullet, request.suggestion))
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="127.0.0.1", port=8000)

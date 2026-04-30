@@ -13,10 +13,9 @@ def consolidate_analysis(
     education_analysis,
     achievements_hobbies_analysis,
     certifications_analysis,
-    job_role_suggestions,
-    target_tier: str = "Standard Enterprise"
+    job_role_suggestions
 ):
-    """Consolidate all analyses and calculate final scores using externalized prompts."""
+    """Consolidate all analyses and calculate final scores."""
 
     # Calculate section scores
     # Basic Info Score (out of 10)
@@ -92,46 +91,15 @@ def consolidate_analysis(
     # Convert to 100 (job role suggestions get neutral 10 marks)
     converted_percentage = (total_score / 90) * 100 if total_score > 0 else 0
 
-    # Calculate Benchmark Grade
-    grade = "Calculating..."
-    tier_key = target_tier.upper().replace(" ", "_")
-    
-    if "BIG_TECH" in tier_key or "FANG" in tier_key:
-        if converted_percentage >= 90:
-            grade = "L6+ / Staff Ready"
-        elif converted_percentage >= 82:
-            grade = "L5 / Senior Ready"
-        elif converted_percentage >= 70:
-            grade = "L4 / Junior-Mid Ready"
-        else:
-            grade = "L3 / Intern-Entry"
-    elif "STARTUP" in tier_key:
-        if converted_percentage >= 85:
-            grade = "Founding Engineer Ready"
-        elif converted_percentage >= 75:
-            grade = "Lead / Senior Ready"
-        elif converted_percentage >= 65:
-            grade = "Core Contributor"
-        else:
-            grade = "Junior / Intern"
-    elif "QUANT" in tier_key or "RESEARCH" in tier_key:
-        if converted_percentage >= 92:
-            grade = "Principal Researcher"
-        elif converted_percentage >= 85:
-            grade = "Senior Quantitative Engineer"
-        elif converted_percentage >= 75:
-            grade = "Associate Quant"
-        else:
-            grade = "Junior Researcher"
-    else:  # Standard Enterprise
-        if converted_percentage >= 88:
-            grade = "Director / Principal"
-        elif converted_percentage >= 78:
-            grade = "Senior / Team Lead"
-        elif converted_percentage >= 65:
-            grade = "Software Engineer II"
-        else:
-            grade = "Associate / Junior"
+    # Calculate Benchmark Grade (Unified Standard)
+    if converted_percentage >= 90:
+        grade = "Principal / Director Ready"
+    elif converted_percentage >= 80:
+        grade = "Senior / Team Lead Ready"
+    elif converted_percentage >= 65:
+        grade = "Software Engineer II / Mid-Level"
+    else:
+        grade = "Associate / Junior"
 
     score_breakdown = ScoreBreakdown(
         basic_info_score=round(basic_info_score, 2),
@@ -145,13 +113,13 @@ def consolidate_analysis(
         total_score=round(total_score, 2),
         total_percentage=round(total_percentage, 2),
         converted_percentage=round(converted_percentage, 2),
-        target_tier=target_tier,
+        target_tier="Standard Enterprise",
     )
     score_breakdown.benchmark_grade = grade
 
-    # Get strengths and areas for improvement using LLM with externalized prompt
+    # Get strengths and areas for improvement using LLM
     try:
-        prompt = get_consolidator_prompt(target_tier)
+        prompt = get_consolidator_prompt()
         formatted_prompt = prompt.format(
             **format_consolidator_data(
                 basic_info_score,
@@ -162,7 +130,6 @@ def consolidate_analysis(
                 ach_hob_score,
                 certifications_score,
                 job_role_suggestions,
-                target_tier,
                 grade,
             )
         )

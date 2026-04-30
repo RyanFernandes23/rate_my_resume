@@ -23,17 +23,15 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-def analyze_projects(resume, target_tier: str = "STANDARD"):
+def analyze_projects(resume):
     """Analyze all project entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ProjectsAnalysis
 
     if not resume.projects:
         return []
 
-    tier_context = target_tier.upper().replace(" ", "_")
-
     # Use LangChain prompt template
-    prompt = get_projects_prompt(target_tier)
+    prompt = get_projects_prompt()
     formatted_prompt = prompt.format(
         projects_data=format_projects_data(resume.projects),
     )
@@ -102,10 +100,10 @@ def analyze_projects(resume, target_tier: str = "STANDARD"):
 
     except Exception as e:
         print(f"Projects analysis fallback triggered: {e}")
-        return _fallback_projects_analysis(resume, tier_context)
+        return _fallback_projects_analysis(resume)
 
 
-def _fallback_projects_analysis(resume, tier_context):
+def _fallback_projects_analysis(resume):
     """Fallback analysis when LLM fails - simplified."""
     result = []
     for i, proj in enumerate(resume.projects):

@@ -1,27 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 
-BASE_REWRITER_PROMPT = """You are a world-class executive resume writer who specializes in {tier} roles.
-Your task is to improve resume bullets when needed, based on recruiter feedback.
-
-{tier_specific_guidance}
-
-Input:
-1. Original Bullet Point: {bullet}
-2. Suggestion: {suggestion}
-3. Metric Guidance: {metric_suggestion}
-
-Output:
-- If the bullet is already strong and complete, just note it's good
-- If it needs improvement, provide 1-2 improved versions that address the suggestion
-- Use real metrics where you can infer them, otherwise describe what metric to add
-- Don't use placeholder tokens like [X]% - instead say what kind of metric to add
-
-Keep bullets concise (1-2 lines). Return a JSON object with key "versions"."""
-
-STANDARD_GUIDANCE = """- Focus on professional communication and clear results.
-- Ensure the bullet follows the Action + Result pattern for general enterprise roles."""
-
-BIG_TECH_GUIDANCE = """Adapt the rewrite based on the candidate's domain. Focus on the following based on field:
+ENTERPRISE_GUIDANCE = """Adapt the rewrite based on the candidate's domain with professional enterprise standards. Focus on the following based on field:
 
 TECHNOLOGY & ENGINEERING:
 - Use terms like 'distributed systems', 'microservices', 'high-availability', and 'latency'.
@@ -65,63 +44,67 @@ OPERATIONS & SUPPLY CHAIN:
 
 Always emphasize measurable, quantifiable outcomes relevant to the specific domain."""
 
-STARTUP_GUIDANCE = """Adapt rewrites to show startup-relevant impact based on the candidate's domain:
+BASE_REWRITER_PROMPT = """You are a world-class executive resume writer who specializes in professional enterprise roles.
+Your task is to improve resume bullets when needed, based on recruiter feedback.
+
+Adapt the rewrite based on the candidate's domain with professional enterprise standards. Focus on the following based on field:
 
 TECHNOLOGY & ENGINEERING:
-- Focus on agility, ownership, and 0-to-1 building.
-- Use terms like 'rapid iteration', 'MVP', 'end-to-end ownership', 'full-stack'.
-- Emphasize user impact, feature launches, and fast delivery.
+- Use terms like 'distributed systems', 'microservices', 'high-availability', and 'latency'.
+- Quantify impact on millions of users or large data systems.
+- Highlight system design decisions, performance optimizations, and scale.
 
-FINANCE & STARTUPS:
-- Focus on resourcefulness and speed.
-- Use terms like 'unit economics', 'MRR growth', 'runway extension', 'cost optimization'.
-- Emphasize financial impact and quick decision-making.
+FINANCE & BANKING:
+- Quantify financial impact (revenue, cost savings, deal values).
+- Use terms like 'risk reduction', 'compliance', 'regulatory', 'transaction value'.
+- Highlight deal pipeline, client relationships, or portfolio management.
 
-CONSULTING & PROFESSIONAL SERVICES:
-- Focus on client impact and rapid problem-solving.
-- Use terms like 'stakeholder alignment', 'deliverable', 'fast turnaround', 'multiple clients'.
-- Emphasize measurable outcomes and client satisfaction.
+CONSULTING:
+- Use terms like 'stakeholder alignment', 'strategic framework', 'transformational'.
+- Quantify business impact (cost reduction %, revenue growth, efficiency gains).
+- Highlight client outcomes and C-level engagement.
 
 PRODUCT MANAGEMENT:
-- Focus on product impact and user-centric results.
-- Use terms like 'feature launch', 'user feedback', 'A/B testing', 'roadmap ownership'.
-- Emphasize metrics (DAU, retention, conversion) and speed to market.
+- Connect to KPIs: DAU, MAU, retention, conversion, user engagement.
+- Use terms like 'roadmap', 'feature launch', 'user research', 'A/B testing'.
+- Highlight cross-functional leadership and product strategy.
 
 MARKETING & GROWTH:
-- Focus on campaign results and growth metrics.
-- Use terms like 'ROI', 'conversion', 'engagement', 'growth experiments'.
-- Emphasize measurable marketing impact quickly achieved.
+- Use terms like 'campaign ROI', 'conversion rate', 'engagement', 'reach'.
+- Quantify marketing metrics (CTR, ROAS, CAC, LTV).
+- Highlight channel expertise and growth experiments.
 
 DATA SCIENCE & ML:
-- Focus on end-to-end ML and business impact.
-- Use terms like 'rapid prototyping', 'model deployment', 'business value', 'iterations'.
-- Emphasize getting ML to production fast.
+- Use terms like 'model accuracy', 'inference latency', 'production deployment'.
+- Quantify model performance improvements or business impact.
+- Highlight end-to-end ML pipelines and MLOps.
 
 SALES & BUSINESS DEVELOPMENT:
-- Focus on pipeline and revenue generation.
-- Use terms like 'quota exceeded', 'new accounts', 'deal velocity', 'client relationships'.
-- Emphasize consistent performance and quick wins.
+- Use terms like 'quota overachievement', 'pipeline', 'enterprise deals', 'ACV'.
+- Quantify sales performance and revenue generation.
+- Highlight strategic partnerships and client relationships.
 
-OPERATIONS & ADMIN:
-- Focus on efficiency and resourcefulness.
-- Use terms like 'process automation', 'cost reduction', 'multi-tasking', 'scaling'.
-- Emphasize doing more with less.
+OPERATIONS & SUPPLY CHAIN:
+- Use terms like 'process efficiency', 'cost reduction', 'vendor management'.
+- Quantify operational improvements (time saved, error reduction, cost savings).
+- Highlight Lean Six Sigma, ERP implementations, or scaling operations.
 
-Always quantify impact with concrete numbers, percentages, or time savings relevant to the domain."""
+Always emphasize measurable, quantifiable outcomes relevant to the specific domain.
 
-QUANT_GUIDANCE = """- Focus on technical precision and algorithmic efficiency.
-- Mention low-level optimizations, mathematical rigor, and micro-latency performance."""
+Input:
+1. Original Bullet Point: {{bullet}}
+2. Suggestion: {{suggestion}}
+3. Metric Guidance: {{metric_suggestion}}
 
-TIER_TEMPLATES = {
-    "STANDARD": BASE_REWRITER_PROMPT.format(tier="STANDARD", tier_specific_guidance=STANDARD_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
-    "BIG_TECH": BASE_REWRITER_PROMPT.format(tier="BIG TECH FANG", tier_specific_guidance=BIG_TECH_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
-    "STARTUP": BASE_REWRITER_PROMPT.format(tier="STARTUP", tier_specific_guidance=STARTUP_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
-    "QUANT": BASE_REWRITER_PROMPT.format(tier="QUANT", tier_specific_guidance=QUANT_GUIDANCE, bullet="{bullet}", suggestion="{suggestion}", metric_suggestion="{metric_suggestion}"),
-}
+Output:
+- If the bullet is already strong and complete, just note it's good
+- If it needs improvement, provide 1-2 improved versions that address the suggestion
+- Use real metrics where you can infer them, otherwise describe what metric to add
+- Don't use placeholder tokens like [X]% - instead say what kind of metric to add
+
+Keep bullets concise (1-2 lines). Return a JSON object with key "versions"."""
 
 
-def get_rewriter_prompt(tier: str = "STANDARD") -> ChatPromptTemplate:
-    """Get the rewriter prompt for a specific tier."""
-    tier_context = tier.upper().replace(" ", "_")
-    template = TIER_TEMPLATES.get(tier_context, TIER_TEMPLATES["STANDARD"])
-    return ChatPromptTemplate.from_template(template)
+def get_rewriter_prompt(tier: str = None) -> ChatPromptTemplate:
+    """Get the rewriter prompt."""
+    return ChatPromptTemplate.from_template(BASE_REWRITER_PROMPT)

@@ -5,7 +5,7 @@ from ..analyzer.schemas import JobRoleSuggestion
 from .prompts.job_role_suggester_prompts import get_job_role_prompt, format_job_role_data
 
 
-def suggest_job_roles(resume, tier="STANDARD") -> list[JobRoleSuggestion]:
+def suggest_job_roles(resume) -> list[JobRoleSuggestion]:
     """Suggest job roles based on resume data using externalized prompts."""
     # Prepare summary data for LLM
     skills = resume.skills or []
@@ -25,7 +25,7 @@ def suggest_job_roles(resume, tier="STANDARD") -> list[JobRoleSuggestion]:
     total_years = resume.total_years_experience or 0
 
     # Use LangChain prompt template
-    prompt = get_job_role_prompt(tier)
+    prompt = get_job_role_prompt()
     formatted_data = format_job_role_data(skills, exp_summary, proj_summary, total_years)
     formatted_prompt = prompt.format(**formatted_data)
 

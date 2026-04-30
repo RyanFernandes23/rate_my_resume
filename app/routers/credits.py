@@ -14,10 +14,9 @@ class CreditsResponse(BaseModel):
     credits: int
 
 
-@router.get("/credits", response_model=CreditsResponse)
 @router.get("", response_model=CreditsResponse)
 async def get_credits(current_user: dict = Depends(get_current_user)):
-    """Get credits for authenticated user."""
+    """Get credits for authenticated user. Router prefix is /credits so this handles GET /credits"""
     user_id = current_user["id"]
     logger.info(f"[CREDITS] Step 1: user_id = {user_id}")
     

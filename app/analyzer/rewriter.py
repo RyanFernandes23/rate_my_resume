@@ -24,10 +24,10 @@ def _suggest_metric_type(bullet: str, suggestion: str) -> str:
         return "Add quantifiable metrics relevant to this work"
 
 
-def rewrite_bullet(bullet: str, suggestion: str, target_tier: str) -> dict:
+def rewrite_bullet(bullet: str, suggestion: str) -> dict:
     metric_suggestion = _suggest_metric_type(bullet, suggestion)
     
-    prompt_template = get_rewriter_prompt(target_tier)
+    prompt_template = get_rewriter_prompt()
     formatted_prompt = prompt_template.format(
         bullet=bullet,
         suggestion=suggestion,

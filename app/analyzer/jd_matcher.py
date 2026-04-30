@@ -5,13 +5,13 @@ from ..analyzer.schemas import JDAnalysis
 from .prompts.jd_matcher_prompts import get_jd_matcher_prompt, format_jd_data
 
 
-def match_with_jd(resume, jd: str, tier: str = "STANDARD"):
+def match_with_jd(resume, jd: str):
     """Compare resume with a specific Job Description using externalized prompts."""
     if not jd:
         return None
 
     # Use LangChain prompt template
-    prompt = get_jd_matcher_prompt(tier)
+    prompt = get_jd_matcher_prompt()
     formatted_prompt = prompt.format(**format_jd_data(jd, resume))
 
     try:

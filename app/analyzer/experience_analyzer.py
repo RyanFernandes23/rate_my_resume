@@ -23,17 +23,15 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-def analyze_experience(resume, target_tier: str = "STANDARD"):
+def analyze_experience(resume):
     """Analyze all experience entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ExperienceAnalysis
 
     if not resume.experience:
         return []
 
-    tier_context = target_tier.upper().replace(" ", "_")
-
     # Use LangChain prompt template
-    prompt = get_experience_prompt(target_tier)
+    prompt = get_experience_prompt()
     formatted_prompt = prompt.format(
         experience_data=format_experience_data(resume.experience),
     )
@@ -102,10 +100,10 @@ def analyze_experience(resume, target_tier: str = "STANDARD"):
 
     except Exception as e:
         print(f"Experience analysis fallback triggered: {e}")
-        return _fallback_experience_analysis(resume, tier_context)
+        return _fallback_experience_analysis(resume)
 
 
-def _fallback_experience_analysis(resume, tier_context):
+def _fallback_experience_analysis(resume):
     """Fallback analysis when LLM fails - simplified."""
     result = []
     for i, exp in enumerate(resume.experience):

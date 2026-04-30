@@ -5,13 +5,13 @@ from ..analyzer.schemas import CertificationAnalysis
 from .prompts.certifications_prompts import get_certifications_prompt, format_certifications_data
 
 
-def analyze_certifications(resume, tier="STANDARD"):
+def analyze_certifications(resume):
     """Analyze all certification entries using LLM with externalized prompts."""
     if not resume.certifications:
         return []
 
     # Use LangChain prompt template
-    prompt = get_certifications_prompt(tier)
+    prompt = get_certifications_prompt()
     formatted_prompt = prompt.format(
         certifications_data=format_certifications_data(resume.certifications),
     )

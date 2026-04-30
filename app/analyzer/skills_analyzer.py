@@ -5,14 +5,13 @@ from ..analyzer.schemas import SkillsAnalysis, AnalysisIssue
 from .prompts.skills_prompts import get_skills_prompt, format_skills_data
 
 
-def analyze_skills(resume, target_tier: str = "STANDARD"):
+def analyze_skills(resume):
     """Analyze skills with cross-reference to experience and projects using externalized prompts."""
-    tier_context = target_tier.upper().replace(" ", "_")
     skills_list = resume.skills or []
     total_count = len(skills_list)
 
     # Use LangChain prompt template
-    prompt = get_skills_prompt(target_tier)
+    prompt = get_skills_prompt()
     formatted_data = format_skills_data(skills_list, resume.experience, resume.projects)
     formatted_prompt = prompt.format(
         skills_list=formatted_data["skills_list"],

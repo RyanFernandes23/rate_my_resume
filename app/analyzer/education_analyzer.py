@@ -6,7 +6,7 @@ from ..analyzer.schemas import EducationAnalysis, GpaAnalysis, AnalysisIssue
 from .prompts.education_prompts import get_education_prompt, format_education_data
 
 
-def analyze_education(resume, tier="STANDARD"):
+def analyze_education(resume):
     """Analyze all education entries using LLM with externalized prompts."""
     from ..analyzer.schemas import EducationAnalysis
 
@@ -30,7 +30,7 @@ def analyze_education(resume, tier="STANDARD"):
                     pass
 
     # Use LangChain prompt template
-    prompt = get_education_prompt(tier)
+    prompt = get_education_prompt()
     formatted_prompt = prompt.format(
         total_years=total_years_experience,
         education_data=format_education_data(resume.education),
