@@ -1,21 +1,10 @@
 """Batch rewriter using LangChain and externalized prompts."""
-import re
 import json
 import logging
-import time
-from app.llm import _wait_for_rate_limit, _is_rate_limit_error
-from app.llm.client import llm
+from app.llm import llm
 from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_batch_rewriter_data
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_suggestion_id(suggestion_key: str) -> str:
-    """Extract the numeric ID from a suggestion key like '0_1_2'."""
-    parts = suggestion_key.split("__")
-    if len(parts) >= 3:
-        return parts[2]
-    return suggestion_key
 
 
 def _clean_json_response(content: str) -> str:
@@ -42,7 +31,7 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
         return []
 
     rewrites = []
-    
+
     # Handle new format: {"rewrites": [{"label": "...", "content": "..."}, ...]}
     if "rewrites" in data:
         rewrites_list = data["rewrites"]
@@ -53,7 +42,7 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
                         "label": item.get("label", "Improved"),
                         "content": item["content"],
                     })
-    
+
     # Handle old format for backward compatibility
     if not rewrites:
         label_map = {
@@ -88,9 +77,6 @@ def batch_rewrite_suggestions(actionable_suggestions):
         bullet_idx = sug["bullet_index"]
         suggestion_key = f"{section_key}__{entry_idx}__{bullet_idx}"
 
-        # Rate limit handling
-        _wait_for_rate_limit()
-
         try:
             prompt = get_batch_rewriter_prompt()
             formatted_data = format_batch_rewriter_data(
@@ -108,9 +94,6 @@ def batch_rewrite_suggestions(actionable_suggestions):
                 rewrites[suggestion_key] = parsed_rewrites
             else:
                 logger.warning(f"No rewrites generated for {suggestion_key}")
-
-            # Small delay to avoid rate limits
-            time.sleep(0.5)
 
         except Exception as e:
             logger.error(f"Error generating rewrites for {suggestion_key}: {e}")

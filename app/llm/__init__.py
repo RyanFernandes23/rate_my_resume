@@ -1,32 +1,9 @@
-import time
 import json
 import logging
 from .schema import Resume
 from .client import llm
 
-_last_call_time = 0
-RATE_LIMIT_SECONDS = 0
-
 logger = logging.getLogger(__name__)
-
-
-def _wait_for_rate_limit():
-    global _last_call_time
-    elapsed = time.time() - _last_call_time
-    if elapsed < RATE_LIMIT_SECONDS:
-        time.sleep(RATE_LIMIT_SECONDS - elapsed)
-    _last_call_time = time.time()
-
-
-def _is_rate_limit_error(e: Exception) -> bool:
-    error_str = str(e).lower()
-    error_type = type(e).__name__.lower()
-    return (
-        "toomanyrequests" in error_str
-        or "toomanyrequests" in error_type
-        or "429" in error_str
-        or "rate limit" in error_str
-    )
 
 
 def _normalize_data(data: dict) -> dict:
@@ -170,41 +147,25 @@ Resume:
 
 
 def extract_resume(markdown: str) -> Resume:
-    _wait_for_rate_limit()
-
     prompt = PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, resume=markdown)
 
-    max_retries = 3
-    base_delay = 2
+    try:
+        response = llm.invoke(prompt)
+        json_str = response.content.strip()
 
-    for attempt in range(max_retries):
-        try:
-            response = llm.invoke(prompt)
-            json_str = response.content.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        elif json_str.startswith("```"):
+            json_str = json_str[3:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        json_str = json_str.strip()
 
-            json_str = json_str.strip()
+        data = json.loads(json_str)
+        data = _normalize_data(data)
 
-            if json_str.startswith("```json"):
-                json_str = json_str[7:]
-            elif json_str.startswith("```"):
-                json_str = json_str[3:]
-            if json_str.endswith("```"):
-                json_str = json_str[:-3]
-            json_str = json_str.strip()
+        return Resume(**data)
 
-            data = json.loads(json_str)
-            data = _normalize_data(data)
-
-            return Resume(**data)
-
-        except Exception as e:
-            if _is_rate_limit_error(e) and attempt < max_retries - 1:
-                wait_time = base_delay * (attempt + 1)
-                logger.warning(f"Rate limited. Waiting {wait_time}s before retry...")
-                time.sleep(wait_time)
-                continue
-            elif attempt < max_retries - 1:
-                wait_time = base_delay
-                time.sleep(wait_time)
-                continue
-            raise ValueError(f"Failed to extract resume: {str(e)}")
+    except Exception as e:
+        logger.error(f"Failed to extract resume: {str(e)}")
+        raise ValueError(f"Failed to extract resume: {str(e)}")

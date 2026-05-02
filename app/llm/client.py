@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+from langchain_cloudflare import ChatCloudflareWorkersAI
+from .utils import llm_retry
 
 load_dotenv()
 
@@ -15,5 +17,15 @@ if LLM_MODE == "openrouter":
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1"
     )
+elif LLM_MODE == "cloudflare":
+    llm = ChatCloudflareWorkersAI(
+        account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID"),
+        api_token=os.getenv("CLOUDFLARE_API_TOKEN"),
+        model="@cf/meta/llama-3.1-8b-instruct",
+    )
 else:
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.0, max_retries=2)
+
+# Centralized decoration of the invoke method
+# We use object.__setattr__ to bypass Pydantic's restriction on setting attributes
+object.__setattr__(llm, 'invoke', llm_retry(llm.invoke))
