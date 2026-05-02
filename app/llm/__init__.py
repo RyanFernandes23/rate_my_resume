@@ -174,8 +174,8 @@ def extract_resume(markdown: str) -> Resume:
 
     prompt = PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, resume=markdown)
 
-    max_retries = 5
-    base_delay = 10
+    max_retries = 3
+    base_delay = 2
 
     for attempt in range(max_retries):
         try:
@@ -199,12 +199,12 @@ def extract_resume(markdown: str) -> Resume:
 
         except Exception as e:
             if _is_rate_limit_error(e) and attempt < max_retries - 1:
-                wait_time = base_delay * (2**attempt) * 2
+                wait_time = base_delay * (attempt + 1)
                 logger.warning(f"Rate limited. Waiting {wait_time}s before retry...")
                 time.sleep(wait_time)
                 continue
             elif attempt < max_retries - 1:
-                wait_time = base_delay * (2**attempt)
+                wait_time = base_delay
                 time.sleep(wait_time)
                 continue
             raise ValueError(f"Failed to extract resume: {str(e)}")
