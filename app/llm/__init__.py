@@ -2,6 +2,7 @@ import json
 import logging
 from .schema import Resume
 from .client import llm
+from .utils import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
@@ -151,21 +152,14 @@ def extract_resume(markdown: str) -> Resume:
 
     try:
         response = llm.invoke(prompt)
-        json_str = response.content.strip()
-
-        if json_str.startswith("```json"):
-            json_str = json_str[7:]
-        elif json_str.startswith("```"):
-            json_str = json_str[3:]
-        if json_str.endswith("```"):
-            json_str = json_str[:-3]
-        json_str = json_str.strip()
-
-        data = json.loads(json_str)
+        data = parse_llm_json(response.content)
         data = _normalize_data(data)
 
         return Resume(**data)
 
     except Exception as e:
         logger.error(f"Failed to extract resume: {str(e)}")
+        # If it's a JSON error, log a bit of the content for debugging
+        if hasattr(e, "doc"):
+            logger.error(f"Raw content was: {getattr(e, 'doc')[:200]}...")
         raise ValueError(f"Failed to extract resume: {str(e)}")

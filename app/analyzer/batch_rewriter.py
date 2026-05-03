@@ -1,4 +1,5 @@
 """Batch rewriter using LangChain and externalized prompts."""
+import asyncio
 import json
 import logging
 from app.llm import llm
@@ -67,11 +68,11 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
     return rewrites
 
 
-def batch_rewrite_suggestions(actionable_suggestions):
-    """Generate rewrite options for multiple suggestions using LangChain."""
+async def batch_rewrite_suggestions(actionable_suggestions):
+    """Generate rewrite options for multiple suggestions in parallel using LangChain."""
     rewrites = {}
-
-    for sug in actionable_suggestions:
+    
+    async def process_single_suggestion(sug):
         section_key = sug["section"]
         entry_idx = sug["entry_index"]
         bullet_idx = sug["bullet_index"]
@@ -86,22 +87,37 @@ def batch_rewrite_suggestions(actionable_suggestions):
             )
             formatted_prompt = prompt.format(**formatted_data)
 
-            response = llm.invoke(formatted_prompt)
+            response = await llm.ainvoke(formatted_prompt)
             json_str = _clean_json_response(response.content)
 
             parsed_rewrites = _parse_rewrites_from_response(json_str, suggestion_key)
             if parsed_rewrites:
-                rewrites[suggestion_key] = parsed_rewrites
+                return suggestion_key, parsed_rewrites
             else:
                 logger.warning(f"No rewrites generated for {suggestion_key}")
+                return suggestion_key, []
 
         except Exception as e:
             logger.error(f"Error generating rewrites for {suggestion_key}: {e}")
-            rewrites[suggestion_key] = [
+            return suggestion_key, [
                 {
                     "label": "Improved",
                     "content": "Consider revising this bullet to add specific metrics. Add details about the impact of your work.",
                 },
             ]
+
+    # Create tasks for all suggestions
+    tasks = [process_single_suggestion(sug) for sug in actionable_suggestions]
+    
+    if not tasks:
+        return {}
+        
+    # Run all tasks in parallel
+    results = await asyncio.gather(*tasks)
+    
+    # Collate results
+    for key, val in results:
+        if val:
+            rewrites[key] = val
 
     return rewrites

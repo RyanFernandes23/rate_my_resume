@@ -1,47 +1,39 @@
 """Main resume analysis module using LangChain and externalized prompts."""
+import asyncio
 from .schemas import ResumeAnalysis
 from .basic_validator import analyze_basic_info
 from .experience_analyzer import analyze_experience
 from .projects_analyzer import analyze_projects
-from .skills_analyzer import analyze_skills
-from .education_analyzer import analyze_education
-from .achievements_hobbies_analyzer import analyze_achievements_hobbies
-from .certifications_analyzer import analyze_certifications
-from .job_role_suggester import suggest_job_roles
-from .jd_matcher import match_with_jd
+from .metadata_analyzer import analyze_metadata
+from .strategic_analyzer import analyze_strategic
 from .consolidator import consolidate_analysis
 
 
-def analyze_resume(resume, jd: str = None) -> ResumeAnalysis:
-    """Main entry point - analyze resume using all analyzer nodes."""
+async def analyze_resume(resume, jd: str = None) -> ResumeAnalysis:
+    """Main entry point - analyze resume using all analyzer nodes in parallel."""
 
-    # Run all analyzer nodes sequentially
+    # 1. Run Basic Info Validator (Sync/Fast)
     print("Running Basic Info Validator...")
     basic_info_analysis = analyze_basic_info(resume)
 
-    print("Running Experience Analyzer...")
-    experience_analysis = analyze_experience(resume)
-
-    print("Running Projects Analyzer...")
-    projects_analysis = analyze_projects(resume)
-
-    print("Running Skills Analyzer...")
-    skills_analysis = analyze_skills(resume)
-
-    print("Running Education Analyzer...")
-    education_analysis = analyze_education(resume)
-
-    print("Running Achievements & Hobbies Analyzer...")
-    achievements_hobbies_analysis = analyze_achievements_hobbies(resume)
-
-    print("Running Certifications Analyzer...")
-    certifications_analysis = analyze_certifications(resume)
-
-    print("Running Job Role Suggester...")
-    job_role_suggestions = suggest_job_roles(resume)
-
-    print("Running JD Matcher...")
-    jd_analysis = match_with_jd(resume, jd) if jd else None
+    # 2. Run LLM Analyzers in Parallel
+    print("Starting Parallel LLM Analysis (Experience, Projects, Metadata, Strategy)...")
+    
+    # Define tasks
+    tasks = [
+        analyze_experience(resume),
+        analyze_projects(resume),
+        analyze_metadata(resume),
+        analyze_strategic(resume, jd)
+    ]
+    
+    # Execute and wait for all to complete
+    results = await asyncio.gather(*tasks)
+    
+    experience_analysis = results[0]
+    projects_analysis = results[1]
+    education_analysis, certifications_analysis, achievements_hobbies_analysis = results[2]
+    skills_analysis, job_role_suggestions, jd_analysis = results[3]
 
     print("Consolidating results...")
     score_breakdown, overall_summary, strengths, areas_for_improvement, job_role_suggestions = (

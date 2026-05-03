@@ -22,6 +22,7 @@ elif LLM_MODE == "cloudflare":
         account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID"),
         api_token=os.getenv("CLOUDFLARE_API_TOKEN"),
         model="@cf/meta/llama-3.1-8b-instruct",
+        max_tokens=2048,
     )
 else:
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.0, max_retries=2)
@@ -29,3 +30,4 @@ else:
 # Centralized decoration of the invoke method
 # We use object.__setattr__ to bypass Pydantic's restriction on setting attributes
 object.__setattr__(llm, 'invoke', llm_retry(llm.invoke))
+object.__setattr__(llm, 'ainvoke', llm_retry(llm.ainvoke))

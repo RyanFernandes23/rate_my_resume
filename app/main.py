@@ -161,11 +161,16 @@ async def analyze_resume_endpoint(
             tmp_file.write(content)
             tmp_path = tmp_file.name
         
-        def process_resume_sync():
+        async def process_resume_async():
             markdown = extract(tmp_path)
             if len(markdown) < 50: raise ValueError("Could not extract meaningful text from file")
             resume = extract_resume(markdown)
-            analysis = analyze_resume(resume, jd=jd)
+            analysis = await analyze_resume(resume, jd=jd)
+            
+            # Use run_in_threadpool only for the blocking transform/suggestion logic if needed, 
+            # but transform_to_frontend_format seems fast enough to run directly or we can keep it in threadpool.
+            # For now, let's just await the analysis and do the rest.
+            from fastapi.concurrency import run_in_threadpool
             result = transform_to_frontend_format(analysis, resume=resume)
             
             actionable_suggestions = []
@@ -178,7 +183,7 @@ async def analyze_resume_endpoint(
             
             if actionable_suggestions:
                 from app.analyzer.batch_rewriter import batch_rewrite_suggestions
-                rewrites = batch_rewrite_suggestions(actionable_suggestions)
+                rewrites = await batch_rewrite_suggestions(actionable_suggestions)
                 for sug in actionable_suggestions:
                     section_key = sug['section']
                     entry_idx = sug['entry_index']
@@ -188,13 +193,11 @@ async def analyze_resume_endpoint(
                     else: entry_suggestions[bullet_idx] = {"original_bullet": sug['bullet'], "advice": entry_suggestions[bullet_idx], "rewrites": rewrites.get(f"{section_key}__{entry_idx}__{bullet_idx}", [])}
             return result
         
-        from fastapi.concurrency import run_in_threadpool
-        
         result = None
         for attempt in range(3):
             try:
-                # Enforce a 12s timeout on the processing sync function
-                result = await asyncio.wait_for(run_in_threadpool(process_resume_sync), timeout=12.0)
+                # Enforce a 60s timeout on the processing function
+                result = await asyncio.wait_for(process_resume_async(), timeout=60.0)
                 break
             except asyncio.TimeoutError:
                 logger.warning(f"Analysis attempt {attempt + 1} timed out.")
@@ -277,7 +280,7 @@ async def stream_analyze_generator(content: bytes, filename: str, jd: Optional[s
         yield emit("analyze_education", 65, "Analyzing education...")
         yield emit("analyze_cert", 75, "Analyzing certifications...")
         
-        analysis = analyze_resume(resume, jd=jd)
+        analysis = await analyze_resume(resume, jd=jd)
         
         yield emit("format", 85, "Formatting results...")
         result = transform_to_frontend_format(analysis, resume=resume)
@@ -300,9 +303,7 @@ async def stream_analyze_generator(content: bytes, filename: str, jd: Optional[s
         
         if actionable_suggestions:
             from app.analyzer.batch_rewriter import batch_rewrite_suggestions
-            from fastapi.concurrency import run_in_threadpool
-            
-            rewrites = await run_in_threadpool(batch_rewrite_suggestions, actionable_suggestions)
+            rewrites = await batch_rewrite_suggestions(actionable_suggestions)
             for sug in actionable_suggestions:
                 section_key = sug['section']
                 entry_idx = sug['entry_index']

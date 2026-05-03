@@ -2,6 +2,7 @@
 import json
 from typing import Optional
 from ..llm.client import llm
+from ..llm.utils import parse_llm_json
 from ..analyzer.schemas import ExperienceAnalysis, AnalysisIssue, BulletSuggestion
 from .prompts.experience_prompts import get_experience_prompt, format_experience_data
 
@@ -23,7 +24,7 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-def analyze_experience(resume):
+async def analyze_experience(resume):
     """Analyze all experience entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ExperienceAnalysis
 
@@ -37,19 +38,8 @@ def analyze_experience(resume):
     )
 
     try:
-        response = llm.invoke(formatted_prompt)
-        json_str = response.content.strip()
-
-        # Clean up markdown
-        if json_str.startswith("```json"):
-            json_str = json_str[7:]
-        elif json_str.startswith("```"):
-            json_str = json_str[3:]
-        if json_str.endswith("```"):
-            json_str = json_str[:-3]
-        json_str = json_str.strip()
-
-        analysis_data = json.loads(json_str)
+        response = await llm.ainvoke(formatted_prompt)
+        analysis_data = parse_llm_json(response.content)
         entries_data = analysis_data.get("entries", [])
 
         result = []

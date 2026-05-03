@@ -45,8 +45,9 @@ print("\n" + "=" * 50)
 print("STEP 3: Analyzing Resume")
 print("=" * 50)
 
+import asyncio
 t3 = time.time()
-analysis = analyze_resume(resume)
+analysis = asyncio.run(analyze_resume(resume))
 print(f"Analyzed resume in {time.time() - t3:.1f}s")
 
 print("\n" + "=" * 50)
@@ -100,7 +101,18 @@ for exp in analysis.experience_analysis:
     if exp.suggestions:
         print(f"  Suggestions:")
         for s in exp.suggestions[:2]:
-            print(f"    - {s[:100]}...")
+            print(f"    - {s.advice[:100]}...")
+
+print("\n" + "=" * 50)
+print("PROJECTS ANALYSIS")
+print("=" * 50)
+for proj in analysis.projects_analysis:
+    print(f"\n{proj.entry_name}")
+    print(f"  Score: {proj.score}/15")
+    if proj.suggestions:
+        print(f"  Suggestions:")
+        for s in proj.suggestions[:2]:
+            print(f"    - {s.advice[:100]}...")
 
 print("\n" + "=" * 50)
 print("SKILLS ANALYSIS")

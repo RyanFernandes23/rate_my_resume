@@ -4,7 +4,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 import logging
 from app.db import settings, service_supabase
-from gotrue.errors im port AuthApiError
+from gotrue.errors import AuthApiError
 
 logger = logging.getLogger(__name__)
 

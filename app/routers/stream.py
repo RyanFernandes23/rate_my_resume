@@ -110,7 +110,7 @@ def _run_analysis_sync(job_id: str, content: bytes, filename: str, jd: Optional[
 
             if actionable_suggestions:
                 from app.analyzer.batch_rewriter import batch_rewrite_suggestions
-                rewrites = batch_rewrite_suggestions(actionable_suggestions)
+                rewrites = await batch_rewrite_suggestions(actionable_suggestions)
                 for sug in actionable_suggestions:
                     section_key = sug["section"]
                     entry_idx = sug["entry_index"]
