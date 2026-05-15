@@ -39,7 +39,7 @@ app.include_router(history.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -104,6 +104,11 @@ from app.utils import transform_to_frontend_format
 @app.get("/")
 def root():
     return {"message": "Rate My Resume API"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 async def event_generator(resume_path, jd, user_id):
