@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: rate-my-resume-backend
+    env: docker
+    plan: free # Change this to 'starter' or higher for production use
+    rootDir: .
+    dockerfilePath: Dockerfile # Relative to rootDir
+    envVars:
+      - key: PORT
+        value: "10000"
+      # You can add placeholder environment variables here,
+      # but make sure to add their actual values in the Render Dashboard!
+      # e.g.,
+      # - key: DATABASE_URL
+      #   sync: false
