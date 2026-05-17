@@ -196,19 +196,15 @@ async def analyze_resume_endpoint(
             return result
         
         result = None
-        for attempt in range(3):
-            try:
-                # Enforce a 60s timeout on the processing function
-                result = await asyncio.wait_for(process_resume_async(), timeout=60.0)
-                break
-            except asyncio.TimeoutError:
-                logger.warning(f"Analysis attempt {attempt + 1} timed out.")
-                if attempt == 2:
-                    raise HTTPException(status_code=504, detail="Analysis timed out after 3 attempts.")
-            except Exception as e:
-                logger.error(f"Analysis attempt {attempt + 1} failed: {e}")
-                if attempt == 2:
-                    raise HTTPException(status_code=500, detail=f"Analysis failed after 3 attempts: {str(e)}")
+        try:
+            # Enforce a 90s timeout (Render drops HTTP connections after 100s)
+            result = await asyncio.wait_for(process_resume_async(), timeout=90.0)
+        except asyncio.TimeoutError:
+            logger.warning("Analysis timed out after 90 seconds.")
+            raise HTTPException(status_code=504, detail="Analysis timed out. The resume is too complex or the AI is overloaded. Please use the streaming endpoint instead.")
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
         
         if result is None:
             raise HTTPException(status_code=500, detail="Analysis failed.")
