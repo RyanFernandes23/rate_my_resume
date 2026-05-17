@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 from app.llm import llm
 from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_batch_rewriter_data
 
@@ -9,17 +10,21 @@ logger = logging.getLogger(__name__)
 
 
 def _clean_json_response(content: str) -> str:
-    """Clean markdown and extract JSON from LLM response."""
-    json_str = content.strip()
-    if json_str.startswith("```json"):
-        json_str = json_str[7:]
-    elif json_str.startswith("```\njson"):
-        json_str = json_str[8:]
-    elif json_str.startswith("```"):
-        json_str = json_str[3:]
-    if json_str.endswith("```"):
-        json_str = json_str[:-3]
-    return json_str.strip()
+    """Extract the first JSON object from LLM response, ignoring markdown fences and preamble text."""
+    text = content.strip()
+
+    # Strategy 1: Find JSON inside markdown code fences (```json ... ``` or ``` ... ```)
+    fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if fence_match:
+        return fence_match.group(1).strip()
+
+    # Strategy 2: Find the first top-level JSON object anywhere in the text
+    brace_match = re.search(r'\{.*\}', text, re.DOTALL)
+    if brace_match:
+        return brace_match.group(0).strip()
+
+    # Fallback: return original text (will fail at json.loads and be caught)
+    return text
 
 
 def _parse_rewrites_from_response(json_str: str, suggestion_key: str):

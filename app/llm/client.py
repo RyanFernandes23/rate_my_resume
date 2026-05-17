@@ -21,8 +21,8 @@ elif LLM_MODE == "cloudflare":
     llm = ChatCloudflareWorkersAI(
         account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID"),
         api_token=os.getenv("CLOUDFLARE_API_TOKEN"),
-        model="@cf/meta/llama-3.1-8b-instruct",
-        max_tokens=2048,
+        model="@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        max_tokens=4096,
     )
 else:
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.0, max_retries=2)

@@ -41,46 +41,36 @@ Focus on revenue generation and pipeline building. Use terms like 'quota overach
 
 Always quantify impact with concrete numbers, percentages, or time savings relevant to the domain."""
 
-BASE_REWRITER_PROMPT = """You are an expert resume writer with deep recruiting experience specialized in professional enterprise roles.
+BASE_REWRITER_PROMPT = """You are an expert resume writer. Your job is to rewrite resume bullets to be clearer, more concise, and more impactful — WITHOUT changing the meaning or inventing facts.
 
-Adapt the rewrite style based on the candidate's domain with professional enterprise standards. Use domain-specific terminology and emphasize relevant impact:
+CRITICAL RULES:
+1. NEVER fabricate metrics, numbers, or claims that are not in the original bullet. If the original says "reduced manual effort", do NOT write "reduced manual effort by 70%".
+2. NEVER add technologies, tools, or methodologies not mentioned in the original bullet.
+3. If a metric exists in the original (e.g., "89%", "10,000", "55+"), keep it. Do not change it.
+4. If the bullet lacks metrics, show where the candidate should add their own using [X] placeholders (e.g., "reducing manual effort by [X]%").
+5. Rewrites must preserve the same meaning. Better phrasing, not different claims.
 
-TECHNOLOGY & ENGINEERING:
-Focus on scale, distributed systems, and high-impact engineering. Use terms like 'scalability', 'fault-tolerance', 'microservices', 'latency', and 'high-availability'. Emphasize impact on millions of users or petabytes of data.
-
-FINANCE & BANKING:
-Focus on financial impact, risk management, and regulatory compliance. Use terms like 'transaction value', 'risk reduction', 'portfolio growth', 'regulatory compliance', and 'client relationship'. Emphasize dollar amounts, percentages, and deal sizes.
-
-CONSULTING:
-Focus on strategic problem-solving and client outcomes. Use terms like 'stakeholder alignment', 'transformation', 'cost optimization', 'revenue growth', and 'process improvement'. Emphasize framework application and measurable business outcomes.
-
-PRODUCT MANAGEMENT:
-Focus on product metrics and user impact. Use terms like 'user engagement', 'retention', 'conversion', 'roadmap', and 'feature launch'. Emphasize KPIs like DAU, MAU, and adoption rates.
-
-MARKETING & GROWTH:
-Focus on campaign performance and growth metrics. Use terms like 'ROI', 'ROAS', 'conversion rate', 'CAC', 'LTV', and 'audience reach'. Emphasize measurable marketing outcomes.
-
-DATA SCIENCE & ML:
-Focus on model performance and business value. Use terms like 'model accuracy', 'inference latency', 'feature engineering', 'A/B testing', and 'production deployment'. Emphasize business impact metrics.
-
-SALES & BUSINESS DEVELOPMENT:
-Focus on revenue generation and pipeline building. Use terms like 'quota overachievement', 'pipeline', 'enterprise deal', 'ACV', 'new logo', and 'client retention'. Emphasize consistent performance and relationship building.
-
-Always quantify impact with concrete numbers, percentages, or time savings relevant to the domain.
+WHAT YOU CAN DO:
+- Use stronger action verbs (e.g., "Built" → "Engineered", "Made" → "Developed")
+- Restructure for clarity (lead with impact, then method)
+- Remove filler words and redundancy
+- Add [X] placeholders where the candidate should insert their own real metrics
+- Use more professional/domain-appropriate language
 
 Original Bullet: {original_bullet}
 Context: {context}
 Recruiter Advice: {advice}
 
-Generate 0-3 rewrites depending on whether the bullet actually needs improvement:
-- If the bullet is strong and complete, return an empty rewrites array and explain why it's good
-- If the bullet needs work, provide 1-3 specific improvements with actual suggestions
+Generate 0-2 rewrites:
+- If the bullet is already strong and well-written, return an empty rewrites array
+- If it can be improved, provide 1-2 rephrased versions
 
 Each rewrite should have:
-- "label": Brief description (e.g., "Quantified impact", "Added technical depth", "Clarified outcome")
-- "content": Improved version using real metrics where possible, or clear guidance on what metric to add
+- "label": What was improved (e.g., "Stronger action verbs", "Clearer structure", "Added metric placeholders")
+- "content": The rewritten bullet
 
-Return a JSON object with key "rewrites" containing the array of rewrites."""
+IMPORTANT: Respond with ONLY the JSON object. No explanation, no markdown, no code fences.
+Example: {{"rewrites": [{{"label": "Clearer structure", "content": "Your improved bullet here."}}]}}"""
 
 
 def get_batch_rewriter_prompt(tier: str = None) -> ChatPromptTemplate:
