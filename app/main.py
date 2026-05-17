@@ -29,6 +29,7 @@ from app.analyzer.schemas import ResumeAnalysis
 from app.llm.schema import Resume
 from app.routers import auth, credits, payments, history
 from app.dependencies import verify_premium_user, get_optional_user
+from app.routers.auth import get_current_user
 
 app = FastAPI(title="Rate My Resume API")
 
@@ -148,13 +149,9 @@ async def analyze_resume_stream(file_path: str, jd: Optional[str] = None, user_i
 async def analyze_resume_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
-    current_user: Optional[dict] = Depends(get_optional_user),
+    current_user: dict = Depends(verify_premium_user),
 ):
-    user_id = current_user.get("id") if current_user else None
-    if user_id:
-        from app.dependencies import check_user_credits
-        credits_before = check_user_credits(user_id)
-        if credits_before < 1: raise HTTPException(status_code=402, detail={"error": "insufficient_credits", "credits": credits_before})
+    user_id = current_user.get("id")
     
     if not file.filename.lower().endswith((".pdf", ".docx")): raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
     content = await file.read()
@@ -360,9 +357,9 @@ async def analyze_resume_stream_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
     target_tier: Optional[str] = None,
-    current_user: Optional[dict] = Depends(get_optional_user),
+    current_user: dict = Depends(verify_premium_user),
 ):
-    user_id = current_user.get("id") if current_user else None
+    user_id = current_user.get("id")
     
     # Read file content here while the file is still open
     content = await file.read()
@@ -380,7 +377,10 @@ class RewriteRequest(BaseModel):
 
 
 @app.post("/api/rewrite")
-async def rewrite_bullet_endpoint(request: RewriteRequest):
+async def rewrite_bullet_endpoint(
+    request: RewriteRequest,
+    current_user: dict = Depends(get_current_user),
+):
     from .analyzer.rewriter import rewrite_bullet
     from fastapi.concurrency import run_in_threadpool
     # target_tier is accepted but not currently used by the rewriter
