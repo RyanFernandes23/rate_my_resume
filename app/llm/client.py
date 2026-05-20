@@ -27,7 +27,7 @@ elif LLM_MODE == "cloudflare":
 else:
     llm = ChatGroq(
         model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), 
-        temperature=0.0, 
+        temperature=0.2, 
         max_retries=2
     )
 

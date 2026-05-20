@@ -120,15 +120,15 @@ Analyze each education entry:
 5. Apply experience-based logic to suggestions.
 
 SCORING_RUBRIC (STRICT):
-- 0-4 (POOR): Missing major/degree, unrecognizable institution, or incoherent dates.
-- 5-7 (AVERAGE): Recognized university with complete details but average performance or relevance.
-- 8-9 (STRONG): High GPA, relevant major/minors, and recognized institution.
-- 10 (EXPERT): Top-tier/Elite institution (Ivy League, MIT, IIT, etc.) with exceptional honors or GPA.
+- 0-3 (POOR): Missing critical details (Degree, Institution), or clearly non-professional.
+- 4-6 (AVERAGE): Basic details present, but lacks relevant coursework, honors, or prestige.
+- 7-8 (STRONG): Solid academic record, relevant coursework mentioned, or high prestige.
+- 9-10 (ELITE): Exceptional GPA, high-prestige institution, honors, or significant relevant achievements.
 
 STRICTNESS RULES:
-- BE CRITICAL. If the university is non-accredited or extremely low rank, the score should stay below 6.
-- Penalize missing GPA if the candidate is a fresh graduate (<2 years exp).
-- Check if the degree is highly relevant (e.g., CS, Math, Engineering).
+- BE CRITICAL. Scoring should be normalized so a 'good' resume gets a 7.
+- Penalize heavily for missing details if entry is present.
+- VALIDATION: The analyzer MUST first confirm education entries exist. If they do, do NOT suggest 'Add formal education' in the issues. Only provide improvement advice if the *existing* entry is weak.
 
 For each education entry, return a JSON object with:
 {{
@@ -143,7 +143,7 @@ For each education entry, return a JSON object with:
         "reasoning": "explanation"
     }},
     "issues": [{{ "issue": "description", "severity": "high/medium/low", "reason": "explanation" }}],
-    "suggestions": ["Specific feedback about this education entry (e.g., 'Your degree is relevant for professional enterprise roles. Consider adding coursework like Data Structures or Machine Learning to show technical depth in your field.')"]
+    "suggestions": ["Specific feedback about this education entry. DO NOT suggest adding education if it is already provided."]
 }}
 
 Education Data:
