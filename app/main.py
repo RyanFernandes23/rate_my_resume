@@ -202,6 +202,12 @@ async def analyze_resume_endpoint(
         except asyncio.TimeoutError:
             logger.warning("Analysis timed out after 90 seconds.")
             raise HTTPException(status_code=504, detail="Analysis timed out. The resume is too complex or the AI is overloaded. Please use the streaming endpoint instead.")
+        except ResumeTooLongError as e:
+            logger.warning(f"Resume too long: {e}")
+            raise HTTPException(status_code=422, detail={"code": "RESUME_TOO_LONG", "message": str(e), "pages": e.pages, "max_pages": e.max_pages})
+        except ValueError as e:
+            logger.warning(f"Validation error: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
             raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

@@ -35,6 +35,13 @@ def extract_pdf(file_path: str) -> str:
     return pymupdf4llm.to_markdown(file_path)
 
 
+class ResumeTooLongError(Exception):
+    """Custom exception for resume length validation."""
+    def __init__(self, pages, max_pages):
+        self.pages = pages
+        self.max_pages = max_pages
+        super().__init__(f"Resume exceeds {max_pages} pages ({pages} pages)")
+
 def validate_pages(file_path: str) -> str | None:
     pages, pdf_path = get_page_count(file_path)
     if pages > MAX_PAGES:
@@ -43,7 +50,7 @@ def validate_pages(file_path: str) -> str | None:
                 os.remove(pdf_path)
             except PermissionError:
                 pass
-        raise ValueError(f"Resume exceeds {MAX_PAGES} pages ({pages} pages)")
+        raise ResumeTooLongError(pages, MAX_PAGES)
     return pdf_path
 
 
