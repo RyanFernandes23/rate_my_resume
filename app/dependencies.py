@@ -1,7 +1,7 @@
 from fastapi import Header, HTTPException, Depends
 from typing import Optional
 import logging
-from app.db import settings, service_supabase
+from app.db import settings, service_supabase, get_client
 from app.routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,9 @@ async def get_optional_user(authorization: Optional[str] = Header(None)) -> Opti
         
     token = authorization.replace("Bearer ", "")
     try:
-        user_response = service_supabase.auth.get_user(token)
+        # Use a fresh client to avoid session pollution
+        auth_client = get_client(use_service_key=True)
+        user_response = auth_client.auth.get_user(token)
         if not user_response.user:
             return None
         user = user_response.user

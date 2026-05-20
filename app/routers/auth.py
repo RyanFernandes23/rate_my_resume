@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header, Response, Request
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import logging
-from app.db import settings, service_supabase
+from app.db import settings, service_supabase, get_client
 from gotrue.errors import AuthApiError
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,9 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     token = authorization.replace("Bearer ", "")
     
     try:
-        user_response = service_supabase.auth.get_user(token)
+        # Use a fresh client to avoid session pollution
+        auth_client = get_client(use_service_key=True)
+        user_response = auth_client.auth.get_user(token)
         
         if not user_response.user:
             logger.warning("[GET_USER] No user found for token")
@@ -78,7 +80,10 @@ async def register(user: UserCreate, response: Response):
         if user.name:
             user_metadata["name"] = user.name
 
-        auth_response = service_supabase.auth.sign_up(
+        # Use a fresh client to avoid polluting the global service client
+        auth_client = get_client(use_service_key=True)
+        
+        auth_response = auth_client.auth.sign_up(
             {
                 "email": user.email,
                 "password": user.password,
@@ -95,7 +100,7 @@ async def register(user: UserCreate, response: Response):
             expires_in = auth_response.session.expires_in or 3600
         else:
             try:
-                signin_response = service_supabase.auth.sign_in_with_password(
+                signin_response = auth_client.auth.sign_in_with_password(
                     {"email": user.email, "password": user.password}
                 )
                 access_token = signin_response.session.access_token
@@ -131,7 +136,10 @@ async def register(user: UserCreate, response: Response):
 async def login(login_data: LoginRequest, response: Response):
     """Login user and return access/refresh tokens"""
     try:
-        auth_response = service_supabase.auth.sign_in_with_password(
+        # Use a fresh client to avoid polluting the global service client
+        auth_client = get_client(use_service_key=True)
+        
+        auth_response = auth_client.auth.sign_in_with_password(
             {
                 "email": login_data.email,
                 "password": login_data.password,
@@ -173,7 +181,9 @@ async def refresh_token(refresh_token_body: dict, response: Response):
         if not refresh_token_str:
             raise HTTPException(status_code=400, detail="Refresh token required")
 
-        auth_response = service_supabase.auth.refresh_session(refresh_token_str)
+        # Use a fresh client to avoid polluting the global service client
+        auth_client = get_client(use_service_key=True)
+        auth_response = auth_client.auth.refresh_session(refresh_token_str)
         
         if not auth_response.session:
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
@@ -199,7 +209,9 @@ async def refresh_token(refresh_token_body: dict, response: Response):
 async def logout(current_user: dict = Depends(get_current_user)):
     """Logout user"""
     try:
-        service_supabase.auth.sign_out()
+        # Use a fresh client to avoid session pollution
+        auth_client = get_client(use_service_key=True)
+        auth_client.auth.sign_out()
     except Exception as e:
         logger.error(f"Logout error: {e}")
     return {"message": "Logged out"}

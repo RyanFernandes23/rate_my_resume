@@ -21,7 +21,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Global clients - DO NOT use auth methods (login, sign_up, refresh) on these
+# as it will pollute the global state and cause JWT expiry issues.
+# Use get_client() for any auth-related operations.
 supabase: Client = create_client(settings.supabase_url, settings.supabase_anon_key)
 service_supabase: Client = create_client(
     settings.supabase_url, settings.supabase_service_key
 )
+
+
+def get_client(use_service_key: bool = False) -> Client:
+    """Returns a fresh Supabase client instance."""
+    key = settings.supabase_service_key if use_service_key else settings.supabase_anon_key
+    return create_client(settings.supabase_url, key)
