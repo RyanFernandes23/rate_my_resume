@@ -13,7 +13,7 @@ if LLM_MODE == "openrouter":
     llm = ChatOpenAI(
         model=os.getenv("OPENROUTER_MODEL", "inclusionai/ling-2.6-1t:free"),
         temperature=0.0,
-        max_retries=2,
+        max_retries=3,
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1"
     )
@@ -28,7 +28,7 @@ else:
     llm = ChatGroq(
         model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), 
         temperature=0.2, 
-        max_retries=2
+        max_retries=3
     )
 
 # Centralized decoration of the invoke method
