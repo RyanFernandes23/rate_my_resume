@@ -1,7 +1,7 @@
 """Experience analyzer using LangChain and externalized prompts."""
 import json
 from typing import Optional
-from ..llm.client import llm
+from ..llm.protocol import LLMClient
 from ..llm.utils import parse_llm_json
 from ..analyzer.schemas import ExperienceAnalysis, AnalysisIssue, BulletSuggestion
 from .prompts.experience_prompts import get_experience_prompt, format_experience_data
@@ -24,7 +24,7 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-async def analyze_experience(resume):
+async def analyze_experience(resume, llm_client: LLMClient):
     """Analyze all experience entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ExperienceAnalysis
 
@@ -38,8 +38,8 @@ async def analyze_experience(resume):
     )
 
     try:
-        response = await llm.ainvoke(formatted_prompt)
-        analysis_data = parse_llm_json(response.content)
+        response = await llm_client.ainvoke(formatted_prompt)
+        analysis_data = parse_llm_json(response)
         entries_data = analysis_data.get("entries", [])
 
         result = []

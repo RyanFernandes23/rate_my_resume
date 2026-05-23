@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 import re
-from app.llm import llm
+from ..llm.protocol import LLMClient
 from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_batch_rewriter_data
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
     return rewrites
 
 
-async def batch_rewrite_suggestions(actionable_suggestions):
+async def batch_rewrite_suggestions(actionable_suggestions, llm_client: LLMClient):
     """Generate rewrite options for multiple suggestions in parallel using LangChain."""
     rewrites = {}
     
@@ -92,8 +92,8 @@ async def batch_rewrite_suggestions(actionable_suggestions):
             )
             formatted_prompt = prompt.format(**formatted_data)
 
-            response = await llm.ainvoke(formatted_prompt)
-            json_str = _clean_json_response(response.content)
+            response = await llm_client.ainvoke(formatted_prompt)
+            json_str = _clean_json_response(response)
 
             parsed_rewrites = _parse_rewrites_from_response(json_str, suggestion_key)
             if parsed_rewrites:

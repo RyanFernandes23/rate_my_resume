@@ -1,79 +1,70 @@
 import json
 import logging
+import os
 from .schema import Resume
-from .client import llm
 from .utils import parse_llm_json
+from .protocol import LLMClient
 
 logger = logging.getLogger(__name__)
 
 
+def create_llm_client() -> LLMClient:
+    from .adapters.retrying import RetryingLLMClient
+
+    mode = os.getenv("LLM_MODE", "groq").lower()
+    if mode == "openrouter":
+        from .adapters.openrouter import OpenRouterAdapter
+        inner = OpenRouterAdapter()
+    elif mode == "cloudflare":
+        from .adapters.cloudflare import CloudflareAdapter
+        inner = CloudflareAdapter()
+    else:
+        from .adapters.groq import GroqAdapter
+        inner = GroqAdapter()
+    return RetryingLLMClient(inner)
+
+
 def _normalize_data(data: dict) -> dict:
     fields_to_normalize = [
-        "skills",
-        "links",
-        "experience",
-        "education",
-        "projects",
-        "achievements",
-        "certifications",
-        "hobbies",
-        "extra_curricular",
+        "skills", "links", "experience", "education", "projects",
+        "achievements", "certifications", "hobbies", "extra_curricular",
     ]
-
     for field in fields_to_normalize:
         if data.get(field) is None:
             data[field] = []
 
-    # Handle professional_summary / summary mapping
     if data.get("professional_summary") is None and data.get("summary"):
-        data["professional_summary"] = data.get("summary")
+        data["professional_summary"] = data["summary"]
     elif data.get("summary") is None and data.get("professional_summary"):
-        data["summary"] = data.get("professional_summary")
-
+        data["summary"] = data["professional_summary"]
     if data.get("total_years_experience") is None:
         data["total_years_experience"] = None
-
     if "experience" in data and data["experience"]:
         for exp in data["experience"]:
             if exp.get("descriptions") is None:
                 exp["descriptions"] = []
-
     if "education" in data and data["education"]:
         for edu in data["education"]:
-            if edu.get("score") is None:
-                edu["score"] = None
-            if edu.get("location") is None:
-                edu["location"] = None
-            if edu.get("start_date") is None:
-                edu["start_date"] = None
-            if edu.get("end_date") is None:
-                edu["end_date"] = None
-
+            for f in ("score", "location", "start_date", "end_date"):
+                if edu.get(f) is None:
+                    edu[f] = None
     if "projects" in data and data["projects"]:
         for proj in data["projects"]:
             if proj.get("descriptions") is None:
                 proj["descriptions"] = []
             if proj.get("link") is None:
                 proj["link"] = None
-            if "technologies" in proj:
-                del proj["technologies"]
-            if "description" in proj:
-                del proj["description"]
-
+            proj.pop("technologies", None)
+            proj.pop("description", None)
     if "achievements" in data and data["achievements"]:
         for ach in data["achievements"]:
             if ach.get("descriptions") is None:
                 ach["descriptions"] = []
-
     if "certifications" in data and data["certifications"]:
         for cert in data["certifications"]:
-            if cert.get("issuer") is None:
-                cert["issuer"] = None
-            if cert.get("date") is None:
-                cert["date"] = None
-            if cert.get("link") is None:
-                cert["link"] = None
-
+            for f in ("issuer", "date", "link"):
+                if cert.get(f) is None:
+                    cert[f] = None
     return data
 
 
@@ -140,26 +131,21 @@ IMPORTANT:
 - If a field is not available, use null for strings and empty array [] for lists
 - Return ONLY valid JSON, no other text"""
 
-
 PROMPT_TEMPLATE = """{system_prompt}
 
 Resume:
 {resume}"""
 
 
-def extract_resume(markdown: str) -> Resume:
+async def extract_resume(markdown: str, llm_client: LLMClient) -> Resume:
     prompt = PROMPT_TEMPLATE.format(system_prompt=SYSTEM_PROMPT, resume=markdown)
-
     try:
-        response = llm.invoke(prompt)
-        data = parse_llm_json(response.content)
+        response = await llm_client.ainvoke(prompt)
+        data = parse_llm_json(response)
         data = _normalize_data(data)
-
         return Resume(**data)
-
     except Exception as e:
         logger.error(f"Failed to extract resume: {str(e)}")
-        # If it's a JSON error, log a bit of the content for debugging
         if hasattr(e, "doc"):
             logger.error(f"Raw content was: {getattr(e, 'doc')[:200]}...")
         raise ValueError(f"Failed to extract resume: {str(e)}")

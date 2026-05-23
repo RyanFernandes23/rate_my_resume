@@ -2,7 +2,7 @@
 import json
 import asyncio
 from typing import List
-from ..llm.client import llm
+from ..llm.protocol import LLMClient
 from ..llm.utils import parse_llm_json
 from ..analyzer.schemas import (
     EducationAnalysis, GpaAnalysis, AnalysisIssue,
@@ -78,7 +78,7 @@ Return a single JSON object with the following structure:
 }}
 """
 
-async def analyze_metadata(resume):
+async def analyze_metadata(resume, llm_client: LLMClient):
     """Analyze Education, Certifications, and Achievements in a single LLM call."""
     # Prepare combined data
     edu_data = format_education_data(resume.education) if resume.education else "[]"
@@ -97,8 +97,8 @@ async def analyze_metadata(resume):
     prompt += "Return ONLY the valid JSON object."
 
     try:
-        response = await llm.ainvoke(prompt)
-        data = parse_llm_json(response.content)
+        response = await llm_client.ainvoke(prompt)
+        data = parse_llm_json(response)
         
         # 1. Process Education
         edu_results = []

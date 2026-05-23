@@ -1,4 +1,3 @@
-from ..llm.client import llm
 from .schemas import (
     BasicInfoAnalysis,
     FieldAnalysis,

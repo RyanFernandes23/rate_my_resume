@@ -1,12 +1,13 @@
 """Consolidator using LangChain and externalized prompts."""
 import json
 import re
-from ..llm.client import llm
+from ..llm.protocol import LLMClient
 from ..analyzer.schemas import ScoreBreakdown, ResumeAnalysis
 from .prompts.consolidator_prompts import get_consolidator_prompt, format_consolidator_data
 
 
-def consolidate_analysis(
+async def consolidate_analysis(
+    llm_client: LLMClient,
     basic_info_analysis,
     experience_analysis,
     projects_analysis,
@@ -135,8 +136,8 @@ def consolidate_analysis(
             )
         )
 
-        response = llm.invoke(formatted_prompt)
-        json_str = response.content.strip()
+        response = await llm_client.ainvoke(formatted_prompt)
+        json_str = response.strip()
 
         # Extract JSON object from potential markdown fences / preamble text
         fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', json_str, re.DOTALL)

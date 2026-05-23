@@ -1,18 +1,55 @@
-from .validation import validate_pages, extract_pdf, cleanup_temp_pdf
+import os
+
+import pymupdf
+import pymupdf4llm
+from docx import Document
+
+__all__ = ["extract", "ResumeTooLongError"]
+
+MAX_PAGES = 2
+
+
+class ResumeTooLongError(Exception):
+    def __init__(self, pages: int, max_pages: int) -> None:
+        self.pages = pages
+        self.max_pages = max_pages
+        super().__init__(f"Resume exceeds {max_pages} pages ({pages} pages)")
+
+
+def _extract_pdf(file_path: str) -> str:
+    doc = pymupdf.open(file_path)
+    page_count = len(doc)
+    doc.close()
+
+    if page_count > MAX_PAGES:
+        raise ResumeTooLongError(page_count, MAX_PAGES)
+
+    return pymupdf4llm.to_markdown(file_path)
+
+
+def _extract_docx(file_path: str) -> str:
+    doc = Document(file_path)
+    lines: list[str] = []
+
+    for para in doc.paragraphs:
+        if para.text.strip():
+            lines.append(para.text)
+
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            lines.append(" | ".join(cells))
+
+    return "\n\n".join(lines)
 
 
 def extract(file_path: str) -> str:
-    pdf_path = validate_pages(file_path)
-
-    ext = file_path.lower().split(".")[-1]
+    ext = file_path.lower().rsplit(".", 1)[-1]
 
     if ext == "pdf":
-        return extract_pdf(file_path)
-    elif ext == "docx":
-        if pdf_path:
-            result = extract_pdf(pdf_path)
-            cleanup_temp_pdf(pdf_path)
-            return result
-        raise ValueError("Failed to convert DOCX to PDF")
-    else:
-        raise ValueError(f"Unsupported format: .{ext}")
+        return _extract_pdf(file_path)
+
+    if ext == "docx":
+        return _extract_docx(file_path)
+
+    raise ValueError(f"Unsupported format: .{ext}")

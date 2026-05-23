@@ -1,6 +1,6 @@
 import json
 import re
-from ..llm.client import llm
+from ..llm.protocol import LLMClient
 from .prompts.rewriter_prompts import get_rewriter_prompt
 
 
@@ -24,7 +24,7 @@ def _suggest_metric_type(bullet: str, suggestion: str) -> str:
         return "Add quantifiable metrics relevant to this work"
 
 
-def rewrite_bullet(bullet: str, suggestion: str) -> dict:
+async def rewrite_bullet(bullet: str, suggestion: str, llm_client: LLMClient) -> dict:
     metric_suggestion = _suggest_metric_type(bullet, suggestion)
     
     prompt_template = get_rewriter_prompt()
@@ -35,8 +35,8 @@ def rewrite_bullet(bullet: str, suggestion: str) -> dict:
     )
 
     try:
-        response = llm.invoke(formatted_prompt)
-        text = response.content.strip()
+        response = await llm_client.ainvoke(formatted_prompt)
+        text = response.strip()
 
         json_match = re.search(r'\{.*\}', text, re.DOTALL)
         if json_match:

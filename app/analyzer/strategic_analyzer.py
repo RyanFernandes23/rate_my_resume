@@ -2,7 +2,7 @@
 import json
 import asyncio
 from typing import List, Optional
-from ..llm.client import llm
+from ..llm.protocol import LLMClient
 from ..llm.utils import parse_llm_json
 from ..analyzer.schemas import (
     SkillsAnalysis, AnalysisIssue, JobRoleSuggestion, JDAnalysis
@@ -55,7 +55,7 @@ Return a single JSON object with the following structure:
 }}
 """
 
-async def analyze_strategic(resume, jd: Optional[str] = None):
+async def analyze_strategic(resume, llm_client: LLMClient, jd: Optional[str] = None):
     """Analyze Skills, Job Roles, and JD Match in a single LLM call."""
     # Prepare Skills Data
     skills_list = resume.skills or []
@@ -78,8 +78,8 @@ async def analyze_strategic(resume, jd: Optional[str] = None):
     prompt += "Return ONLY the valid JSON object."
 
     try:
-        response = await llm.ainvoke(prompt)
-        data = parse_llm_json(response.content)
+        response = await llm_client.ainvoke(prompt)
+        data = parse_llm_json(response)
         
         # 1. Process Skills
         s_data = data.get("skills_analysis", {})
