@@ -85,22 +85,31 @@ async def consolidate_analysis(
     # Job Role Fit Score - NOT scored, just suggestions
     job_role_fit_score = 0
 
-    # Calculate total (without job role fit)
-    total_score = (
-        basic_info_score
-        + experience_score
-        + projects_score
-        + skills_score
-        + education_score
-        + ach_hob_score
-        + certifications_score
-    )
+    # Redistribute weights: core sections always count; supplementary sections
+    # (Projects, Education, Achievements, Certifications) dropped if score <50% max
+    CORE_SECTIONS = {"basic_info", "experience", "skills"}
+    SUPP_THRESHOLD = 0.3
 
-    # Calculate percentage
-    total_percentage = total_score
+    section_weights = [
+        (basic_info_score, 10, "basic_info"),
+        (experience_score, 25, "experience"),
+        (projects_score, 25, "projects"),
+        (skills_score, 15, "skills"),
+        (education_score, 10, "education"),
+        (ach_hob_score, 10, "achievements_hobbies"),
+        (certifications_score, 5, "certifications"),
+    ]
 
-    # Score is already out of 100
-    converted_percentage = total_score if total_score > 0 else 0
+    active_score = 0.0
+    active_max = 0.0
+    for score, max_score, name in section_weights:
+        if name in CORE_SECTIONS or (max_score > 0 and score / max_score >= SUPP_THRESHOLD):
+            active_score += score
+            active_max += max_score
+
+    total_percentage = (active_score / active_max * 100) if active_max > 0 else 0.0
+    total_score = total_percentage
+    converted_percentage = total_percentage if total_percentage > 0 else 0
 
     # Calculate Benchmark Grade (Unified Standard)
     if converted_percentage >= 90:
