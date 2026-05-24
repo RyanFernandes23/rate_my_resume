@@ -11,7 +11,7 @@ from .llm.protocol import LLMClient
 from .llm import extract_resume
 from .repositories.credit import CreditRepository
 from .repositories.analysis import AnalysisRepository
-from .extractors import extract as extract_text
+from .extractors import extract as extract_text, ResumeTooLongError
 from .analyzer import analyze_resume as run_analyzers
 from .analyzer.batch_rewriter import batch_rewrite_suggestions
 from .utils import transform_to_frontend_format
@@ -156,6 +156,10 @@ class AnalysisPipeline:
                 saved_to_history=bool(analysis_id),
                 credits_remaining=credits_remaining,
             )
+
+        except ResumeTooLongError as e:
+            yield ProgressEvent("error", 0, str(e))
+            return
 
         except Exception:
             import traceback

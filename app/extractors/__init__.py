@@ -6,7 +6,7 @@ from docx import Document
 
 __all__ = ["extract", "ResumeTooLongError"]
 
-MAX_PAGES = 2
+MAX_PAGES = 4
 
 
 class ResumeTooLongError(Exception):

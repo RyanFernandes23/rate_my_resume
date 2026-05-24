@@ -169,7 +169,7 @@ async def _collect_sync_result(
     async for event in pipeline.run(ctx):
         if isinstance(event, ProgressEvent):
             if event.stage == "error":
-                raise HTTPException(status_code=500, detail=event.message)
+                raise HTTPException(status_code=400, detail=event.message)
             if event.stage == "credits_error":
                 raise HTTPException(status_code=402, detail=event.message)
         elif isinstance(event, PipelineResult):
