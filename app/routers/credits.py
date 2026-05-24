@@ -1,4 +1,3 @@
-# app/routers/credits.py
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.db import service_supabase
@@ -14,53 +13,49 @@ class CreditsResponse(BaseModel):
     credits: int
 
 
+def _mask_id(user_id: str) -> str:
+    return user_id[:8] + "..." if user_id else "unknown"
+
+
 @router.get("", response_model=CreditsResponse)
 async def get_credits(current_user: dict = Depends(get_current_user)):
-    """Get credits for authenticated user. Router prefix is /credits so this handles GET /credits"""
     user_id = current_user["id"]
-    logger.info(f"[CREDITS] Step 1: user_id = {user_id}")
-    
+    logger.info(f"Credits lookup for user {_mask_id(user_id)}")
+
     try:
         response = service_supabase.table("user_credits").select("credits").eq("user_id", user_id).execute()
-        logger.info(f"[CREDITS] Step 2: response.data = {response.data}")
-        
+
         if not response.data:
-            logger.warning(f"[CREDITS] Step 3: No credits row found, returning 0")
             return CreditsResponse(credits=0)
-        
+
         credits = response.data[0]["credits"]
-        logger.info(f"[CREDITS] Step 4: credits = {credits}")
-        
-        result = CreditsResponse(credits=credits)
-        logger.info(f"[CREDITS] Step 5: returning result = {result}")
-        return result
-        
+        return CreditsResponse(credits=credits)
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[CREDITS] Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Credits error: {str(e)}")
+        logger.exception(f"Credits error for user {_mask_id(user_id)}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 
 @router.post("/deduct")
 async def deduct_credit(current_user: dict = Depends(get_current_user)):
-    """Deduct a credit for authenticated user"""
     user_id = current_user["id"]
-    logger.info(f"[CREDITS] Deducting credit for user: {user_id}")
-    
+    logger.info(f"Deducting credit for user {_mask_id(user_id)}")
+
     existing = service_supabase.table("user_credits").select("credits").eq("user_id", user_id).execute()
-    
+
     if not existing.data:
-        logger.warning(f"[CREDITS] No credits row for {user_id}")
+        logger.warning(f"No credits row for {_mask_id(user_id)}")
         raise HTTPException(status_code=400, detail="No credits available")
-    
+
     current = existing.data[0]["credits"]
-    
+
     if current < 1:
         raise HTTPException(status_code=400, detail="No credits available")
-    
+
     new_balance = current - 1
     service_supabase.table("user_credits").update({"credits": new_balance}).eq("user_id", user_id).execute()
 
-    logger.info(f"[CREDITS] Credit deducted. New balance: {new_balance}")
+    logger.info(f"Credit deducted. New balance: {new_balance}")
     return {"remainingCredits": new_balance}

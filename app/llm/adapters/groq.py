@@ -7,11 +7,13 @@ load_dotenv()
 
 
 class GroqAdapter:
-    def __init__(self) -> None:
+    def __init__(self, model: str = None) -> None:
+        model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         self._llm = ChatGroq(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            model=model,
             temperature=0.2,
             max_retries=3,
+            max_tokens=8192,
         )
 
     async def ainvoke(self, prompt: str) -> str:

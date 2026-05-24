@@ -1,20 +1,30 @@
 # app/routers/auth.py
-from fastapi import APIRouter, HTTPException, Depends, Header, Response, Request
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, HTTPException, Depends, Response, Request
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 import logging
-from app.db import settings, service_supabase, get_client
+from app.db import settings, get_client
+from app.lib.cookie_service import CookieService, get_supabase_session_token
 from gotrue.errors import AuthApiError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+from app.rate_limit import limiter
+
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return v
 
 
 class UserResponse(BaseModel):
@@ -23,37 +33,45 @@ class UserResponse(BaseModel):
     name: Optional[str] = None
 
 
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str
+class AuthResponse(BaseModel):
     user: UserResponse
-    expires_in: int
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     remember_me: bool = False
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+def _get_cookie_service() -> CookieService:
+    return CookieService(secure=settings.cookie_secure)
+
+
+async def get_current_user(request: Request) -> dict:
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if not authorization or not authorization.startswith("Bearer "):
+    cookie_service = _get_cookie_service()
+    token = cookie_service.get_access_token(request)
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[len("Bearer "):]
+    if not token:
+        token = get_supabase_session_token(request, settings.supabase_url)
+    if not token:
         raise credentials_exception
 
-    token = authorization.replace("Bearer ", "")
-    
     try:
-        # Use a fresh client to avoid session pollution
         auth_client = get_client(use_service_key=True)
         user_response = auth_client.auth.get_user(token)
-        
+
         if not user_response.user:
             logger.warning("[GET_USER] No user found for token")
             raise credentials_exception
@@ -72,17 +90,17 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         raise credentials_exception
 
 
-@router.post("/register", response_model=Token)
-async def register(user: UserCreate, response: Response):
-    """Register user and return access/refresh tokens"""
+@router.post("/register", response_model=AuthResponse)
+@limiter.limit("5/hour")
+async def register(request: Request, user: UserCreate, response: Response):
+    """Register user and return user info. Auth tokens are set as HttpOnly cookies."""
     try:
         user_metadata = {}
         if user.name:
             user_metadata["name"] = user.name
 
-        # Use a fresh client to avoid polluting the global service client
         auth_client = get_client(use_service_key=True)
-        
+
         auth_response = auth_client.auth.sign_up(
             {
                 "email": user.email,
@@ -90,7 +108,7 @@ async def register(user: UserCreate, response: Response):
                 "options": {"data": user_metadata},
             }
         )
-        
+
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Registration failed")
 
@@ -106,7 +124,7 @@ async def register(user: UserCreate, response: Response):
                 access_token = signin_response.session.access_token
                 refresh_token = signin_response.session.refresh_token
                 expires_in = signin_response.session.expires_in or 3600
-            except Exception as e:
+            except Exception:
                 access_token = ""
                 refresh_token = ""
                 expires_in = 0
@@ -114,17 +132,17 @@ async def register(user: UserCreate, response: Response):
         user_id = auth_response.user.id
         user_email = auth_response.user.email or user.email
 
-        return Token(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            token_type="bearer",
+        cookie_service = _get_cookie_service()
+        if access_token and refresh_token and expires_in > 0:
+            cookie_service.set_auth_cookies(response, access_token, refresh_token, expires_in)
+
+        return AuthResponse(
             user=UserResponse(id=user_id, email=user_email, name=user.name),
-            expires_in=expires_in,
         )
-        
+
     except AuthApiError as e:
         logger.error(f"Supabase auth error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Registration failed")
     except HTTPException:
         raise
     except Exception as e:
@@ -132,37 +150,38 @@ async def register(user: UserCreate, response: Response):
         raise HTTPException(status_code=400, detail="Registration failed")
 
 
-@router.post("/login", response_model=Token)
-async def login(login_data: LoginRequest, response: Response):
-    """Login user and return access/refresh tokens"""
+@router.post("/login", response_model=AuthResponse)
+@limiter.limit("10/minute")
+async def login(request: Request, login_data: LoginRequest, response: Response):
+    """Login user and return user info. Auth tokens are set as HttpOnly cookies."""
     try:
-        # Use a fresh client to avoid polluting the global service client
         auth_client = get_client(use_service_key=True)
-        
+
         auth_response = auth_client.auth.sign_in_with_password(
             {
                 "email": login_data.email,
                 "password": login_data.password,
             }
         )
-        
+
         if not auth_response.user or not auth_response.session:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         user = auth_response.user
         session = auth_response.session
-        
+
         user_metadata = user.user_metadata or {}
         name = user_metadata.get("name")
 
-        return Token(
-            access_token=session.access_token,
-            refresh_token=session.refresh_token,
-            token_type="bearer",
-            user=UserResponse(id=user.id, email=user.email, name=name),
-            expires_in=session.expires_in or 3600,
+        cookie_service = _get_cookie_service()
+        cookie_service.set_auth_cookies(
+            response, session.access_token, session.refresh_token, session.expires_in or 3600
         )
-        
+
+        return AuthResponse(
+            user=UserResponse(id=user.id, email=user.email, name=name),
+        )
+
     except AuthApiError as e:
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -173,18 +192,23 @@ async def login(login_data: LoginRequest, response: Response):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
-@router.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token_body: dict, response: Response):
-    """Refresh access token using refresh token"""
+@router.post("/refresh", response_model=AuthResponse)
+@limiter.limit("10/minute")
+async def refresh_token(request: Request, response: Response, body: Optional[RefreshRequest] = None):
+    """Refresh access token. New auth tokens are set as HttpOnly cookies."""
     try:
-        refresh_token_str = refresh_token_body.get("refresh_token")
-        if not refresh_token_str:
-            raise HTTPException(status_code=400, detail="Refresh token required")
+        cookie_service = _get_cookie_service()
+        refresh_token_str = cookie_service.get_refresh_token(request)
 
-        # Use a fresh client to avoid polluting the global service client
+        if not refresh_token_str and body and body.refresh_token:
+            refresh_token_str = body.refresh_token
+
+        if not refresh_token_str:
+            raise HTTPException(status_code=400, detail="Refresh token missing")
+
         auth_client = get_client(use_service_key=True)
         auth_response = auth_client.auth.refresh_session(refresh_token_str)
-        
+
         if not auth_response.session:
             raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -192,28 +216,32 @@ async def refresh_token(refresh_token_body: dict, response: Response):
         session = auth_response.session
         user_metadata = user.user_metadata or {}
 
-        return Token(
-            access_token=session.access_token,
-            refresh_token=session.refresh_token,
-            token_type="bearer",
-            user=UserResponse(id=user.id, email=user.email, name=user_metadata.get("name")),
-            expires_in=session.expires_in or 3600,
+        cookie_service.set_auth_cookies(
+            response, session.access_token, session.refresh_token, session.expires_in or 3600
         )
-        
+
+        return AuthResponse(
+            user=UserResponse(id=user.id, email=user.email, name=user_metadata.get("name")),
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Token refresh error: {e}")
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
 
 @router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user)):
+async def logout(response: Response, current_user: dict = Depends(get_current_user)):
     """Logout user"""
     try:
-        # Use a fresh client to avoid session pollution
         auth_client = get_client(use_service_key=True)
         auth_client.auth.sign_out()
     except Exception as e:
         logger.error(f"Logout error: {e}")
+
+    cookie_service = _get_cookie_service()
+    cookie_service.clear_auth_cookies(response)
     return {"message": "Logged out"}
 
 

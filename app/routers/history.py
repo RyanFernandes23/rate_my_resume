@@ -35,6 +35,7 @@ async def get_analysis(analysis_id: str, current_user: dict = Depends(get_curren
     resp = service_supabase.table("analyses") \
         .select("*") \
         .eq("id", analysis_id) \
+        .eq("user_id", current_user["id"]) \
         .single() \
         .execute()
     if not resp.data:

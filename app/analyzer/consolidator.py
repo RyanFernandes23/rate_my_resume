@@ -42,7 +42,7 @@ async def consolidate_analysis(
     else:
         experience_score = 0
 
-    # Projects Score (out of 15)
+    # Projects Score (out of 25)
     if projects_analysis:
         proj_scores = [p.score for p in projects_analysis]
         projects_score = sum(proj_scores) / len(proj_scores)
@@ -52,26 +52,35 @@ async def consolidate_analysis(
     # Skills Score (out of 15) - already calculated
     skills_score = skills_analysis.score if skills_analysis else 0
 
-    # Education Score (out of 10) - penalize missing/missing details
+    # Education Score (out of 10)
     if education_analysis:
         edu_scores = [e.score for e in education_analysis]
         education_score = sum(edu_scores) / len(edu_scores)
+        education_status = f"Found {len(education_analysis)} entries (score {education_score:.1f}/10)"
     else:
-        education_score = 5.0  # STRICT: penalize missing education
+        education_score = 0
+        education_status = "Not found (score 0/10)"
 
-    # Achievements & Hobbies Score (out of 10) - penalize missing
+    # Achievements & Hobbies Score (out of 10)
     ach_hob_score = (
         achievements_hobbies_analysis.score
         if achievements_hobbies_analysis
-        else 5.0  # STRICT: penalize missing achievements
+        else 0
+    )
+    achievements_status = (
+        f"Found {len(achievements_hobbies_analysis.achievements)} achievements + {len(achievements_hobbies_analysis.hobbies)} hobbies (score {ach_hob_score:.1f}/10)"
+        if achievements_hobbies_analysis
+        else "Not found (score 0/10)"
     )
 
-    # Certifications Score (out of 5) - penalize missing
+    # Certifications Score (out of 5)
     if certifications_analysis:
         cert_scores = [c.score for c in certifications_analysis]
         certifications_score = sum(cert_scores) / len(cert_scores)
+        certifications_status = f"Found {len(certifications_analysis)} entries (score {certifications_score:.1f}/5)"
     else:
-        certifications_score = 2.5  # STRICT: penalize missing certs
+        certifications_score = 0
+        certifications_status = "Not found (score 0/5)"
 
     # Job Role Fit Score - NOT scored, just suggestions
     job_role_fit_score = 0
@@ -90,8 +99,8 @@ async def consolidate_analysis(
     # Calculate percentage
     total_percentage = total_score
 
-    # Convert to 100 (job role suggestions get neutral 10 marks)
-    converted_percentage = (total_score / 90) * 100 if total_score > 0 else 0
+    # Score is already out of 100
+    converted_percentage = total_score if total_score > 0 else 0
 
     # Calculate Benchmark Grade (Unified Standard)
     if converted_percentage >= 90:
@@ -133,6 +142,9 @@ async def consolidate_analysis(
                 certifications_score,
                 job_role_suggestions,
                 grade,
+                education_status=education_status,
+                certifications_status=certifications_status,
+                achievements_status=achievements_status,
             )
         )
 

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -20,31 +20,70 @@ from app.llm import create_llm_client
 from app.repositories.credit import SupabaseCreditRepository
 from app.repositories.analysis import SupabaseAnalysisRepository
 from app.pipeline import AnalysisPipeline, PipelineContext, ProgressEvent, PipelineResult
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.rate_limit import limiter
 from app.routers import auth, credits, payments, history
 from app.dependencies import verify_premium_user, get_optional_user
 from app.routers.auth import get_current_user
 
 app = FastAPI(title="Rate My Resume API")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 app.include_router(auth.router)
 app.include_router(credits.router)
 app.include_router(payments.router)
 app.include_router(history.router)
 
+
+@app.middleware("http")
+async def enforce_https(request: Request, call_next):
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto and forwarded_proto == "http":
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "HTTPS required"},
+        )
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
 
+def _validate_resume_file(file: UploadFile, content: bytes) -> None:
+    allowed_extensions = (".pdf", ".docx")
+    if not file.filename.lower().endswith(allowed_extensions):
+        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
+
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB")
+
+    if file.filename.lower().endswith(".pdf") and not content.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="Invalid PDF file")
+    if file.filename.lower().endswith(".docx") and not content.startswith(b"PK"):
+        raise HTTPException(status_code=400, detail="Invalid DOCX file")
+
+
+def _validate_jd(jd: Optional[str]) -> None:
+    if jd and len(jd) > 5000:
+        raise HTTPException(
+            status_code=400, detail="Job description exceeds maximum length of 5000 characters"
+        )
+
+
 def get_pipeline() -> AnalysisPipeline:
-    llm_client = create_llm_client()
+    slow_client = create_llm_client()
+    fast_client = create_llm_client(model="llama-3.1-8b-instant")
     credit_repo = SupabaseCreditRepository(service_supabase)
     analysis_repo = SupabaseAnalysisRepository(service_supabase)
-    return AnalysisPipeline(llm_client, credit_repo, analysis_repo)
+    return AnalysisPipeline(slow_client, credit_repo, analysis_repo, fast_llm_client=fast_client)
 
 
 @app.get("/")
@@ -89,12 +128,9 @@ async def analyze_resume_endpoint(
     current_user: dict = Depends(verify_premium_user),
 ):
     user_id = current_user.get("id")
-
-    if not file.filename.lower().endswith((".pdf", ".docx")):
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
+    _validate_jd(jd)
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB")
+    _validate_resume_file(file, content)
 
     ctx = PipelineContext(
         file_content=content,
@@ -145,7 +181,9 @@ async def analyze_resume_stream_endpoint(
     current_user: dict = Depends(verify_premium_user),
 ):
     user_id = current_user.get("id")
+    _validate_jd(jd)
     content = await file.read()
+    _validate_resume_file(file, content)
 
     ctx = PipelineContext(
         file_content=content,

@@ -7,11 +7,12 @@ load_dotenv()
 
 
 class CloudflareAdapter:
-    def __init__(self) -> None:
+    def __init__(self, model: str = None) -> None:
+        model = model or os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
         self._llm = ChatCloudflareWorkersAI(
             account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID"),
             api_token=os.getenv("CLOUDFLARE_API_TOKEN"),
-            model=os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+            model=model,
             max_tokens=4096,
         )
 

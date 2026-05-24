@@ -7,9 +7,10 @@ load_dotenv()
 
 
 class OpenRouterAdapter:
-    def __init__(self) -> None:
+    def __init__(self, model: str = None) -> None:
+        model = model or os.getenv("OPENROUTER_MODEL", "inclusionai/ling-2.6-1t:free")
         self._llm = ChatOpenAI(
-            model=os.getenv("OPENROUTER_MODEL", "inclusionai/ling-2.6-1t:free"),
+            model=model,
             temperature=0.0,
             max_retries=3,
             api_key=os.getenv("OPENROUTER_API_KEY"),

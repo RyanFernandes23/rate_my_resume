@@ -1,3 +1,72 @@
+"""Tests for pipeline filtering and scoring changes."""
+import json
+import pytest
+
+from app.pipeline import AnalysisPipeline
+from app.analyzer.consolidator import consolidate_analysis
+
+
+class TestHighScoringEntryFilter:
+    def test_filters_experience_suggestions_above_threshold(self):
+        result = {
+            "experience_analysis": [
+                {"entry_summary": "Good entry", "score": 20.0, "suggestions": [{"bullet_index": 0, "advice": "Fix this"}]},
+                {"entry_summary": "Bad entry", "score": 10.0, "suggestions": [{"bullet_index": 0, "advice": "Fix this"}]},
+            ],
+            "projects_analysis": [],
+        }
+        AnalysisPipeline._filter_high_scoring_entries(result)
+        assert result["experience_analysis"][0]["suggestions"] == []
+        assert len(result["experience_analysis"][1]["suggestions"]) == 1
+
+    def test_filters_projects_suggestions_above_threshold(self):
+        result = {
+            "experience_analysis": [],
+            "projects_analysis": [
+                {"entry_name": "Good project", "score": 25.0, "suggestions": [{"bullet_index": 0, "advice": "Fix"}]},
+                {"entry_name": "Ok project", "score": 19.0, "suggestions": [{"bullet_index": 0, "advice": "Fix"}]},
+            ],
+        }
+        AnalysisPipeline._filter_high_scoring_entries(result)
+        assert result["projects_analysis"][0]["suggestions"] == []
+        assert len(result["projects_analysis"][1]["suggestions"]) == 1
+
+    def test_handles_missing_sections_gracefully(self):
+        result = {"experience_analysis": [], "projects_analysis": []}
+        AnalysisPipeline._filter_high_scoring_entries(result)
+        assert result["experience_analysis"] == []
+
+    def test_filters_section_suggestions_and_areas_above_threshold(self):
+        result = {
+            "experience_analysis": [],
+            "projects_analysis": [],
+            "sections": [
+                {"name": "Skills", "score": 13.0, "max_score": 15, "suggestions": ["Improve"]},
+                {"name": "Education", "score": 6.0, "max_score": 10, "suggestions": ["Add more"]},
+                {"name": "Achievements & Hobbies", "score": 8.0, "max_score": 10, "suggestions": ["Expand"]},
+                {"name": "Certifications", "score": 4.0, "max_score": 5, "suggestions": ["Get cert"]},
+            ],
+            "areas_for_improvement": [
+                "Skills development: score of 13 is concerning",
+                "Education: consider adding more",
+                "Some other issue not related to sections",
+            ],
+        }
+        AnalysisPipeline._filter_high_scoring_entries(result)
+        # Skills ≥ 12.0 → suggestions cleared
+        assert result["sections"][0]["suggestions"] == []
+        # Education 6.0 < 8.0 → suggestions kept
+        assert result["sections"][1]["suggestions"] == ["Add more"]
+        # Achievements 8.0 ≥ 8.0 → suggestions cleared
+        assert result["sections"][2]["suggestions"] == []
+        # Certifications 4.0 ≥ 4.0 → suggestions cleared
+        assert result["sections"][3]["suggestions"] == []
+        # areas_for_improvement "Skills" item removed, "Education" kept, unrelated kept
+        assert result["areas_for_improvement"] == [
+            "Education: consider adding more",
+            "Some other issue not related to sections",
+        ]
+
 """Regression tests for `'str' object has no attribute 'content'` bug.
 
 After LLMClient.ainvoke() was changed to return a plain str (instead of an
@@ -58,6 +127,31 @@ def make_minimal_resume() -> Resume:
         extra_curricular=["Mentoring"],
         total_years_experience=4.0,
     )
+
+
+class TestMissingSectionScores:
+    @pytest.mark.asyncio
+    async def test_missing_sections_score_zero(self):
+        """Missing education/certs/achievements should score 0, not 2.5-5."""
+        client = FakeLLMClient(response=json.dumps({
+            "overall_summary": "Test",
+            "strengths": ["Test"],
+            "areas_for_improvement": ["Test"],
+        }))
+        scores, summary, strengths, areas, roles = await consolidate_analysis(
+            llm_client=client,
+            basic_info_analysis=None,
+            experience_analysis=[],
+            projects_analysis=[],
+            skills_analysis=None,
+            education_analysis=[],
+            achievements_hobbies_analysis=None,
+            certifications_analysis=[],
+            job_role_suggestions=[],
+        )
+        assert scores.education_score == 0
+        assert scores.achievements_hobbies_score == 0
+        assert scores.certifications_score == 0
 
 
 class TestMetadataAnalyzer:
@@ -156,7 +250,7 @@ class TestProjectsAnalyzer:
                 "entry_index": 0,
                 "star_score": 8.0,
                 "star_reasoning": "Good.",
-                "score": 15.0,
+                "score": 22.0,
                 "good_things": ["Interesting"],
                 "recommendation": "keep",
                 "suggestions": [],

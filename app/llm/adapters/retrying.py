@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class RetryingLLMClient:
-    def __init__(self, inner: LLMClient, rate_limit_seconds: float = 0.5) -> None:
+    def __init__(self, inner: LLMClient, rate_limit_seconds: float = 1.0) -> None:
         self._inner = inner
         self._rate_limit_seconds = rate_limit_seconds
         self._last_call_time: float = 0

@@ -16,7 +16,7 @@ dependencies = [
     "python-docx>=1.2.0",
     "docx2pdf>=0.1.0",
     "python-dotenv==1.0.1",
-    "python-multipart==0.0.12",
+    "python-multipart>=0.0.18",
     "uvicorn==0.32.0",
     "langchain-groq>=1.1.2",
     "langchain-openai>=0.3.0",
@@ -30,6 +30,7 @@ dependencies = [
     "gotrue>=2.12.4",
     "tenacity>=9.1.4",
     "langchain-cloudflare>=0.3.4",
+    "slowapi>=0.1.9",
 ]
 
 [dependency-groups]

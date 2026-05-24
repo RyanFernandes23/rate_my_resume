@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: str
     secret_key: str
     frontend_url: str = "http://localhost:3000"
+    cookie_secure: bool = False
 
     class Config:
         env_file = ".env"

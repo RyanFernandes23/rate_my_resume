@@ -8,19 +8,19 @@ from .protocol import LLMClient
 logger = logging.getLogger(__name__)
 
 
-def create_llm_client() -> LLMClient:
+def create_llm_client(model: str = None) -> LLMClient:
     from .adapters.retrying import RetryingLLMClient
 
     mode = os.getenv("LLM_MODE", "groq").lower()
     if mode == "openrouter":
         from .adapters.openrouter import OpenRouterAdapter
-        inner = OpenRouterAdapter()
+        inner = OpenRouterAdapter(model=model)
     elif mode == "cloudflare":
         from .adapters.cloudflare import CloudflareAdapter
-        inner = CloudflareAdapter()
+        inner = CloudflareAdapter(model=model)
     else:
         from .adapters.groq import GroqAdapter
-        inner = GroqAdapter()
+        inner = GroqAdapter(model=model)
     return RetryingLLMClient(inner)
 
 

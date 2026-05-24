@@ -56,12 +56,12 @@ print("=" * 50)
 sb = analysis.score_breakdown
 print(f"Basic Info:      {sb.basic_info_score}/10 ({sb.basic_info_score * 10:.1f}%)")
 print(f"Experience:      {sb.experience_score}/25 ({sb.experience_score * 4:.1f}%)")
-print(f"Projects:        {sb.projects_score}/15 ({sb.projects_score * 6.67:.1f}%)")
+print(f"Projects:        {sb.projects_score}/25 ({sb.projects_score * 4:.1f}%)")
 print(f"Skills:          {sb.skills_score}/15 ({sb.skills_score * 6.67:.1f}%)")
 print(f"Education:       {sb.education_score}/10 ({sb.education_score * 10:.1f}%)")
 print(f"Job Role Fit:     Not Scored (Just Suggestions)")
 print(f"-" * 30)
-print(f"TOTAL:           {sb.total_score}/90 ({sb.total_percentage:.1f}%)")
+print(f"TOTAL:           {sb.total_score}/100 ({sb.total_percentage:.1f}%)")
 print(f"Converted Score: {sb.converted_percentage}/100")
 
 print("\n" + "=" * 50)
@@ -108,7 +108,7 @@ print("PROJECTS ANALYSIS")
 print("=" * 50)
 for proj in analysis.projects_analysis:
     print(f"\n{proj.entry_name}")
-    print(f"  Score: {proj.score}/15")
+    print(f"  Score: {proj.score}/25")
     if proj.suggestions:
         print(f"  Suggestions:")
         for s in proj.suggestions[:2]:

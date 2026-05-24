@@ -111,13 +111,17 @@ async def batch_rewrite_suggestions(actionable_suggestions, llm_client: LLMClien
                 },
             ]
 
-    # Create tasks for all suggestions
-    tasks = [process_single_suggestion(sug) for sug in actionable_suggestions]
-    
-    if not tasks:
+    if not actionable_suggestions:
         return {}
-        
-    # Run all tasks in parallel
+
+    # Limit concurrency to avoid Groq 429s
+    semaphore = asyncio.Semaphore(3)
+
+    async def throttled_process(sug):
+        async with semaphore:
+            return await process_single_suggestion(sug)
+
+    tasks = [throttled_process(sug) for sug in actionable_suggestions]
     results = await asyncio.gather(*tasks)
     
     # Collate results

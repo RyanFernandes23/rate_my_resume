@@ -16,21 +16,22 @@ from .prompts.achievements_prompts import get_achievements_prompt, format_achiev
 METADATA_SYSTEM_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the Education, Certifications, and Achievements/Hobbies sections of this resume.
 
 ### EDUCATION EVALUATION:
-Evaluate based on domain standards (TECH: top-tier CS; FINANCE: target schools; CONSULTING: business schools).
+IMPORTANT: If education entries exist, do NOT suggest "Add formal education". Only give feedback on how to improve existing entries.
 - If exp >= 2 years: Suggest condensing.
 - If exp < 2 years: Keep details.
 SCORING (0-10):
-- 0-4 (POOR): Missing major/degree, unrecognizable institution.
-- 5-7 (AVERAGE): Recognized university but average performance.
-- 8-9 (STRONG): High GPA, relevant major, recognized institution.
-- 10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors.
+- 0-3 (POOR): Missing major/degree, unrecognizable institution.
+- 4-6 (AVERAGE): Recognized university but average performance.
+- 7-8 (STRONG): High GPA, relevant major, recognized institution.
+- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors.
 
 ### CERTIFICATIONS EVALUATION:
-Check for industry-recognized providers (AWS, Google, Coursera, etc.).
+Check for industry-recognized providers (AWS, Google, Microsoft, CFA, etc.).
 SCORING (0-5):
-- 1-2: Generic or low-value certs.
-- 3-4: Industry-standard professional certs.
-- 5: Advanced/Niche high-value certifications.
+- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No link or date.
+- 2-3 (AVERAGE): Recognized certification but from a lower-tier provider or missing details.
+- 4 (STRONG): Industry-recognized certification with proper details.
+- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present.
 
 ### ACHIEVEMENTS & HOBBIES EVALUATION:
 - Achievements: Look for quantifiable impact and professional relevance.
@@ -162,10 +163,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
         ach_count = len(ach_results)
         hobby_count = len(hobby_results)
         ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
-        if hobby_count == 0 and ach_count == 0:
-            hobby_score = 2.0
-        else:
-            hobby_score = min(4.0, hobby_count * 1.0)
+        hobby_score = min(4.0, hobby_count * 1.0)
             
         ach_hobbies_final = AchievementsHobbiesAnalysis(
             achievements=ach_results,
@@ -179,4 +177,4 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     except Exception as e:
         print(f"Metadata combined analysis failed: {e}. Falling back to defaults.")
         # Simplified fallback - you could import and call original fallbacks here
-        return [], [], AchievementsHobbiesAnalysis(achievements=[], hobbies=[], suggestions=[], score=5.0)
+        return [], [], AchievementsHobbiesAnalysis(achievements=[], hobbies=[], suggestions=[], score=0.0)

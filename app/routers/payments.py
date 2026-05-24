@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from datetime import datetime
@@ -6,6 +7,12 @@ import hmac
 import hashlib
 from app.routers.auth import get_current_user
 from app.db import settings, service_supabase
+
+logger = logging.getLogger(__name__)
+
+
+def _mask_id(user_id: str) -> str:
+    return user_id[:8] + "..." if user_id else "unknown"
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -73,7 +80,7 @@ async def create_order(
     user_id = current_user["id"]
 
     try:
-        print(f"[CREATE-ORDER] Creating order for user: {user_id}, pack: {request.pack_id}")
+        logger.info(f"Creating order for user: {_mask_id(user_id)}, pack: {request.pack_id}")
         order = razorpay_client.order.create(
             {
                 "amount": pack["amount_inr"] * 100,
@@ -81,7 +88,7 @@ async def create_order(
                 "receipt": f"{user_id[:8]}_{int(datetime.now().timestamp())}",
             }
         )
-        print(f"[CREATE-ORDER] Razorpay order created: {order['id']}")
+        logger.info(f"Razorpay order created: {order['id']}")
 
         service_supabase.table("payment_orders").insert(
             {
@@ -92,7 +99,7 @@ async def create_order(
                 "status": "created",
             }
         ).execute()
-        print(f"[CREATE-ORDER] Order saved to Supabase")
+        logger.info(f"Order saved to Supabase")
 
         return CreateOrderResponse(
             order_id=order["id"],
@@ -101,10 +108,8 @@ async def create_order(
             key_id=settings.razorpay_key_id,
         )
     except Exception as e:
-        print(f"[CREATE-ORDER] ERROR: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Failed to create order: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 
 @router.post("/verify", response_model=VerifyPaymentResponse)
@@ -198,8 +203,8 @@ async def razorpay_webhook(request: Request):
     event_type = event.get("event")
 
     if event_type == "payment_link.paid":
-        print(f"Payment succeeded for order {event['payload']['payment_link']['id']}")
+        logger.info(f"Payment succeeded for order {event['payload']['payment_link']['id']}")
     elif event_type == "payment_link.failed":
-        print(f"Payment failed for order {event['payload']['payment_link']['id']}")
+        logger.info(f"Payment failed for order {event['payload']['payment_link']['id']}")
 
     return {"status": "success"}

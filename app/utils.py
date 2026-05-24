@@ -34,7 +34,7 @@ def transform_to_frontend_format(
     sections = [
         {"name": "Basic Information", "score": sb.basic_info_score, "max_score": 10, "suggestions": list(dict.fromkeys(bi_suggestions))},
         {"name": "Experience", "score": sb.experience_score, "max_score": 25, "suggestions": []},
-        {"name": "Projects", "score": sb.projects_score, "max_score": 15, "suggestions": []},
+        {"name": "Projects", "score": sb.projects_score, "max_score": 25, "suggestions": []},
         {"name": "Skills", "score": sb.skills_score, "max_score": 15, "suggestions": analysis.skills_analysis.suggestions if analysis.skills_analysis else []},
         {"name": "Education", "score": sb.education_score, "max_score": 10, "suggestions": list(dict.fromkeys([s for edu in (analysis.education_analysis or []) for s in edu.suggestions]))},
         {"name": "Achievements & Hobbies", "score": sb.achievements_hobbies_score, "max_score": 10, "suggestions": analysis.achievements_hobbies_analysis.suggestions if analysis.achievements_hobbies_analysis else []},

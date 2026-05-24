@@ -1,5 +1,6 @@
 """Single AnalysisPipeline module — the only place the full analysis sequence lives."""
 import os
+import time
 import tempfile
 import logging
 from collections.abc import AsyncIterator
@@ -50,8 +51,10 @@ class AnalysisPipeline:
         llm_client: LLMClient,
         credit_repo: CreditRepository,
         analysis_repo: AnalysisRepository,
+        fast_llm_client: Optional[LLMClient] = None,
     ) -> None:
         self._llm_client = llm_client
+        self._fast_llm_client = fast_llm_client or llm_client
         self._credit_repo = credit_repo
         self._analysis_repo = analysis_repo
 
@@ -60,6 +63,7 @@ class AnalysisPipeline:
     ) -> AsyncIterator[ProgressEvent | PipelineResult]:
         tmp_path: Optional[str] = None
         credits_before = 0
+        _t0 = time.perf_counter()
 
         try:
             # --- Validation ---
@@ -88,17 +92,22 @@ class AnalysisPipeline:
                     )
                     return
 
+            _t = time.perf_counter()
             yield ProgressEvent("extract", 5, "Extracting text from file...")
             markdown = extract_text(tmp_path)
+            logger.info("[TIMING] extract_text: %.2fs", time.perf_counter() - _t)
             if len(markdown) < 50:
                 yield ProgressEvent(
                     "error", 0, "Could not extract meaningful text from file"
                 )
                 return
 
+            _t = time.perf_counter()
             yield ProgressEvent("parse", 15, "Parsing resume structure...")
             resume = await extract_resume(markdown, self._llm_client)
+            logger.info("[TIMING] extract_resume: %.2fs", time.perf_counter() - _t)
 
+            _t = time.perf_counter()
             yield ProgressEvent("analyze_basic", 25, "Analyzing basic info...")
             yield ProgressEvent("analyze_exp", 35, "Analyzing experience...")
             yield ProgressEvent("analyze_projects", 45, "Analyzing projects...")
@@ -106,14 +115,22 @@ class AnalysisPipeline:
             yield ProgressEvent("analyze_education", 65, "Analyzing education...")
             yield ProgressEvent("analyze_cert", 75, "Analyzing certifications...")
 
-            analysis = await run_analyzers(resume, self._llm_client, jd=ctx.jd)
+            analysis = await run_analyzers(resume, self._llm_client, self._fast_llm_client, jd=ctx.jd)
+            logger.info("[TIMING] analyzers (all): %.2fs", time.perf_counter() - _t)
 
+            _t = time.perf_counter()
             yield ProgressEvent("format", 85, "Formatting results...")
             result = transform_to_frontend_format(analysis, resume=resume)
+            logger.info("[TIMING] transform: %.2fs", time.perf_counter() - _t)
 
+            # --- Filter high-scoring entries (≥80% of max) ---
+            self._filter_high_scoring_entries(result)
+
+            _t = time.perf_counter()
             # --- Rewrites ---
             yield ProgressEvent("rewrite", 92, "Generating improvement suggestions...")
             await self._attach_rewrites(result)
+            logger.info("[TIMING] rewrites: %.2fs", time.perf_counter() - _t)
 
             # --- Credit deduction ---
             if ctx.user_id:
@@ -132,6 +149,7 @@ class AnalysisPipeline:
                 credits_before - 1 if ctx.user_id else None
             )
 
+            logger.info("[TIMING] TOTAL pipeline: %.2fs", time.perf_counter() - _t0)
             yield PipelineResult(
                 analysis_data=result,
                 analysis_id=analysis_id,
@@ -212,3 +230,39 @@ class AnalysisPipeline:
                     "advice": entry_suggestions[bullet_idx],
                     "rewrites": rewrites.get(key, []),
                 }
+
+    @staticmethod
+    def _filter_high_scoring_entries(result: dict) -> None:
+        THRESHOLD = 0.80  # 80%
+
+        # Experience / Projects per-entry suggestions
+        for section_key in ("experience_analysis", "projects_analysis"):
+            entries = result.get(section_key, [])
+            for entry in entries:
+                score = entry.get("score", 0)
+                if score >= THRESHOLD * 25:
+                    entry["suggestions"] = []
+
+        # Section-level suggestions (Skills, Education, Certifications, Achievements)
+        SECTION_MAXES = {
+            "Skills": 15,
+            "Education": 10,
+            "Certifications": 5,
+            "Achievements & Hobbies": 10,
+        }
+        high_scoring_sections = set()
+        for section in result.get("sections", []):
+            name = section["name"]
+            max_score = SECTION_MAXES.get(name)
+            if max_score and section["score"] >= THRESHOLD * max_score:
+                section["suggestions"] = []
+                high_scoring_sections.add(name.lower())
+
+        # Filter areas_for_improvement that mention high-scoring sections
+        if high_scoring_sections:
+            filtered = []
+            for item in (result.get("areas_for_improvement") or []):
+                item_lower = item.lower()
+                if not any(section in item_lower for section in high_scoring_sections):
+                    filtered.append(item)
+            result["areas_for_improvement"] = filtered

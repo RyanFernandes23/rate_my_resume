@@ -75,7 +75,7 @@ class ProjectsAnalysis(BaseModel):
     suggestions: List[BulletSuggestion] = Field(default_factory=list)  # Structured suggestions
     good_things: List[str] = Field(default_factory=list)
     recommendation: str  # keep/revise/remove
-    score: float  # /15
+    score: float  # /25
 
 
 class SkillsAnalysis(BaseModel):
@@ -164,14 +164,14 @@ class JDAnalysis(BaseModel):
 class ScoreBreakdown(BaseModel):
     basic_info_score: float  # /10
     experience_score: float  # /25
-    projects_score: float  # /15
+    projects_score: float  # /25
     skills_score: float  # /15
     education_score: float  # /10
     achievements_hobbies_score: float  # /10
     certifications_score: float  # /5
     job_role_fit_score: float  # /10 (not scored, just suggestions)
-    total_score: float  # /90 (actual scored)
-    total_percentage: float  # out of 90
+    total_score: float  # /100 (actual scored)
+    total_percentage: float  # out of 100
     converted_percentage: float  # out of 100
     benchmark_grade: Optional[str] = None  # e.g., "L5 / Senior Ready"
     target_tier: Optional[str] = None  # e.g., "Big Tech"
