@@ -122,15 +122,8 @@ class AchievementAnalysis(BaseModel):
     issues: List[str] = Field(default_factory=list)
 
 
-class HobbyAnalysis(BaseModel):
-    hobby: str
-    is_professional: bool  # relates to job/career
-    suggestions: List[str] = Field(default_factory=list)
-
-
-class AchievementsHobbiesAnalysis(BaseModel):
+class AchievementsAnalysis(BaseModel):
     achievements: List[AchievementAnalysis] = Field(default_factory=list)
-    hobbies: List[HobbyAnalysis] = Field(default_factory=list)
     suggestions: List[str] = Field(default_factory=list)
     score: float  # /10
 
@@ -167,7 +160,7 @@ class ScoreBreakdown(BaseModel):
     projects_score: float  # /25
     skills_score: float  # /15
     education_score: float  # /10
-    achievements_hobbies_score: float  # /10
+    achievements_score: float  # /10
     certifications_score: float  # /5
     job_role_fit_score: float  # /10 (not scored, just suggestions)
     total_score: float  # /100 (actual scored)
@@ -184,7 +177,7 @@ class ResumeAnalysis(BaseModel):
     projects_analysis: List[ProjectsAnalysis] = Field(default_factory=list)
     skills_analysis: SkillsAnalysis
     education_analysis: List[EducationAnalysis] = Field(default_factory=list)
-    achievements_hobbies_analysis: AchievementsHobbiesAnalysis
+    achievements_analysis: AchievementsAnalysis
     certifications_analysis: List[CertificationAnalysis] = Field(default_factory=list)
     job_role_suggestions: List[JobRoleSuggestion] = Field(default_factory=list)
     overall_summary: str

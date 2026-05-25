@@ -32,10 +32,10 @@ async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClie
 
     results = await asyncio.gather(*tasks)
     logger.info("[TIMING] all 4 parallel analyzers: %.2fs", time.perf_counter() - _t)
-
+    
     experience_analysis = results[0]
     projects_analysis = results[1]
-    education_analysis, certifications_analysis, achievements_hobbies_analysis = results[2]
+    education_analysis, certifications_analysis, achievements_analysis = results[2]
     skills_analysis, job_role_suggestions, jd_analysis = results[3]
 
     _t = time.perf_counter()
@@ -47,7 +47,7 @@ async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClie
             projects_analysis,
             skills_analysis,
             education_analysis,
-            achievements_hobbies_analysis,
+            achievements_analysis,
             certifications_analysis,
             job_role_suggestions,
         )

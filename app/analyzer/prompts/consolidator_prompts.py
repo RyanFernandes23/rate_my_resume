@@ -55,7 +55,7 @@ def format_consolidator_data(
         "skills_score": skills_score,
         "education": education_status,
         "certifications": certifications_status,
-        "achievements_hobbies": achievements_status,
+        "achievements": achievements_status,
         "job_role_suggestions": [r.role for r in job_role_suggestions[:3]] if job_role_suggestions else [],
         "benchmark_grade": benchmark_grade,
     }

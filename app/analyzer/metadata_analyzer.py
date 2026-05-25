@@ -6,8 +6,8 @@ from ..llm.protocol import LLMClient
 from ..llm.utils import parse_llm_json
 from ..analyzer.schemas import (
     EducationAnalysis, GpaAnalysis, AnalysisIssue,
-    CertificationAnalysis, AchievementsHobbiesAnalysis,
-    AchievementAnalysis, HobbyAnalysis
+    CertificationAnalysis, AchievementsAnalysis,
+    AchievementAnalysis
 )
 from .prompts.education_prompts import get_education_prompt, format_education_data
 from .prompts.certifications_prompts import get_certifications_prompt, format_certifications_data
@@ -33,12 +33,10 @@ SCORING (0-5):
 - 4 (STRONG): Industry-recognized certification with proper details.
 - 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present.
 
-### ACHIEVEMENTS & HOBBIES EVALUATION:
+### ACHIEVEMENTS EVALUATION:
 - Achievements: Look for quantifiable impact and professional relevance.
-- Hobbies: Note if they are professional-relevant or just personal.
 SCORING (0-10):
-- Achievements (6pts): 0.75pt each for up to 4.
-- Hobbies (4pts): 1pt each for up to 4.
+- Achievements (10pts): up to 10 points based on quality and impact.
 
 Return a single JSON object with the following structure:
 {{
@@ -70,11 +68,7 @@ Return a single JSON object with the following structure:
         "reasoning": str,
         "issues": [str]
     }} ],
-    "hobbies": [ {{
-        "hobby": str,
-        "is_professional": bool,
-        "suggestions": [str]
-    }} ],
+
     "overall_metadata_suggestions": [str]
 }}
 """
@@ -84,7 +78,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     # Prepare combined data
     edu_data = format_education_data(resume.education) if resume.education else "[]"
     cert_data = format_certifications_data(resume.certifications) if resume.certifications else "[]"
-    ach_data = format_achievements_data(resume.achievements, resume.hobbies, resume.extra_curricular)
+    ach_data = format_achievements_data(resume.achievements)
     
     # Calculate years of exp for education context
     total_years = resume.total_years_experience or 0
@@ -93,8 +87,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     prompt += f"TOTAL YEARS EXPERIENCE: {total_years}\n\n"
     prompt += f"EDUCATION DATA:\n{edu_data}\n\n"
     prompt += f"CERTIFICATIONS DATA:\n{cert_data}\n\n"
-    prompt += f"ACHIEVEMENTS DATA:\n{ach_data['achievements_data']}\n\n"
-    prompt += f"HOBBIES DATA:\n{ach_data['hobbies_data']}\n\n"
+    prompt += f"ACHIEVEMENTS DATA:\n{ach_data}\n\n"
     prompt += "Return ONLY the valid JSON object."
 
     try:
@@ -139,7 +132,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
                 score=float(c.get("score", 4.0)),
             ))
             
-        # 3. Process Achievements & Hobbies
+        # 3. Process Achievements
         ach_results = []
         for ach in data.get("achievements", []):
             ach_results.append(AchievementAnalysis(
@@ -151,28 +144,17 @@ async def analyze_metadata(resume, llm_client: LLMClient):
                 issues=ach.get("issues", []),
             ))
             
-        hobby_results = []
-        for hb in data.get("hobbies", []):
-            hobby_results.append(HobbyAnalysis(
-                hobby=hb.get("hobby", ""),
-                is_professional=hb.get("is_professional", False),
-                suggestions=hb.get("suggestions", []),
-            ))
-            
-        # Calculate combined Achievements score
+        # Calculate Achievements score
         ach_count = len(ach_results)
-        hobby_count = len(hobby_results)
-        ach_score = min(6.0, ach_count * 0.75) if ach_count > 0 else 0.0
-        hobby_score = min(4.0, hobby_count * 1.0)
+        ach_score = min(10.0, ach_count * 1.25) if ach_count > 0 else 0.0
             
-        ach_hobbies_final = AchievementsHobbiesAnalysis(
+        ach_final = AchievementsAnalysis(
             achievements=ach_results,
-            hobbies=hobby_results,
             suggestions=data.get("overall_metadata_suggestions", []),
-            score=round(ach_score + hobby_score, 2)
+            score=round(ach_score, 2)
         )
         
-        return edu_results, cert_results, ach_hobbies_final
+        return edu_results, cert_results, ach_final
 
     except Exception as e:
         print(f"Metadata combined analysis failed: {e}. Falling back to defaults.")

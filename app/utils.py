@@ -37,7 +37,7 @@ def transform_to_frontend_format(
         {"name": "Projects", "score": sb.projects_score, "max_score": 25, "suggestions": []},
         {"name": "Skills", "score": sb.skills_score, "max_score": 15, "suggestions": analysis.skills_analysis.suggestions if analysis.skills_analysis else []},
         {"name": "Education", "score": sb.education_score, "max_score": 10, "suggestions": list(dict.fromkeys([s for edu in (analysis.education_analysis or []) for s in edu.suggestions]))},
-        {"name": "Achievements & Hobbies", "score": sb.achievements_hobbies_score, "max_score": 10, "suggestions": analysis.achievements_hobbies_analysis.suggestions if analysis.achievements_hobbies_analysis else []},
+        {"name": "Achievements", "score": sb.achievements_score, "max_score": 10, "suggestions": analysis.achievements_analysis.suggestions if analysis.achievements_analysis else []},
         {"name": "Certifications", "score": sb.certifications_score, "max_score": 5, "suggestions": list(dict.fromkeys([s for cert in (analysis.certifications_analysis or []) for s in cert.suggestions]))},
     ]
 
@@ -50,7 +50,7 @@ def transform_to_frontend_format(
             "projects_score": sb.projects_score,
             "skills_score": sb.skills_score,
             "education_score": sb.education_score,
-            "achievements_hobbies_score": sb.achievements_hobbies_score,
+             "achievements_score": sb.achievements_score,
             "certifications_score": sb.certifications_score,
             "job_role_fit_score": sb.job_role_fit_score,
             "total_score": sb.total_score,

@@ -61,15 +61,15 @@ async def consolidate_analysis(
         education_score = 0
         education_status = "Not found (score 0/10)"
 
-    # Achievements & Hobbies Score (out of 10)
-    ach_hob_score = (
-        achievements_hobbies_analysis.score
-        if achievements_hobbies_analysis
+    # Achievements Score (out of 10)
+    ach_score = (
+        achievements_analysis.score
+        if achievements_analysis
         else 0
     )
     achievements_status = (
-        f"Found {len(achievements_hobbies_analysis.achievements)} achievements + {len(achievements_hobbies_analysis.hobbies)} hobbies (score {ach_hob_score:.1f}/10)"
-        if achievements_hobbies_analysis
+        f"Found {len(achievements_analysis.achievements)} achievements (score {ach_score:.1f}/10)"
+        if achievements_analysis
         else "Not found (score 0/10)"
     )
 
@@ -96,7 +96,7 @@ async def consolidate_analysis(
         (projects_score, 25, "projects"),
         (skills_score, 15, "skills"),
         (education_score, 10, "education"),
-        (ach_hob_score, 10, "achievements_hobbies"),
+        (ach_score, 10, "achievements"),
         (certifications_score, 5, "certifications"),
     ]
 

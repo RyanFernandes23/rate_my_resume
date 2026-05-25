@@ -252,7 +252,7 @@ class AnalysisPipeline:
             "Skills": 15,
             "Education": 10,
             "Certifications": 5,
-            "Achievements & Hobbies": 10,
+            "Achievements": 10,
         }
         high_scoring_sections = set()
         for section in result.get("sections", []):
