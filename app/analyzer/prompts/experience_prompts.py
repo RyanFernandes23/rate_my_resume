@@ -23,15 +23,17 @@ For each experience entry, your response must include:
 Quantify impact using percentages, dollar amounts, or time saved wherever possible.
 
 SCORING_RUBRIC (STRICT):
-- 0-9 (POOR): Vague bullets, "responsible for" phrasing, ZERO metrics, or irrelevant tech stack.
-- 10-15 (AVERAGE): Clear tasks but missing the 'Result' in STAR. Basic metrics used but impact feels small or common.
-- 16-20 (STRONG): Strong STAR usage, clear quantifiable impact, and deep technical mastery.
-- 21-25 (EXPERT): Exceptional impact (e.g., $1M+ saved, 90%+ optimization, led teams of 10+). Rare, unique technical or leadership achievement.
+- 0-9 (POOR): Vague bullets, "responsible for" phrasing, no clear impact, or irrelevant tech stack.
+- 10-15 (AVERAGE): Clear tasks but missing the 'Result' in STAR. Some impact described but small or common in scope.
+- 16-20 (STRONG): Strong STAR usage, demonstrated impact (business outcome, efficiency gain, leadership), and deep technical/domain mastery.
+- 21-25 (EXPERT): Exceptional impact (e.g., $1M+ saved, 90%+ optimization, led teams of 10+, initiated a new process/product). Rare, unique technical or leadership achievement.
 
 General Guidelines:
 - BE CRITICAL. A 25/25 should be near-impossible to achieve. Most professional resumes should fall in the 10-18 range.
-- PENALIZE HEAVILY (-5 to -10 points) if bullets lack quantifiable metrics (%, $, numbers).
-- If bullets lack metrics, provide concrete advice on WHAT metric would be relevant.
+- IMPACT matters more than raw metrics. A bullet describing a meaningful business outcome, process improvement, or team leadership without exact numbers can score higher than a bullet with numbers but trivial impact.
+- Reward demonstrated outcomes: faster delivery, better quality, customer satisfaction, team efficiency, cost reduction, process creation, mentorship, ownership.
+- If metrics are naturally available, they strengthen the bullet. But DO NOT penalize heavily just because exact % or $ is missing — evaluate the substance of the impact instead.
+- If bullets lack clear impact, provide concrete advice on how to articulate the outcome or what metric would demonstrate it.
 - Require specific Technical Depth for Senior roles.
 - Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric the user should add.
 

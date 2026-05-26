@@ -15,6 +15,7 @@ STRICTNESS RULES:
 - BE CRITICAL. If a skill is listed but NEVER mentioned in experience bullets, penalize heavily.
 - Penalize "soft skills" (e.g., "Team Player") if they take up space in a technical resume.
 - Check if the "Powerhouse" languages and tools for the domain are present.
+- Impact matters: prioritize skills that directly contributed to meaningful outcomes. A few deeply-applied skills are worth more than a long list with shallow evidence.
 
 Return a JSON object with:
 {{

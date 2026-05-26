@@ -93,7 +93,7 @@ OPERATIONS & SUPPLY CHAIN:
 Provide domain-appropriate evaluation of achievements and recommendations.
 
 Analyze achievements:
-1. Evaluate impact of each achievement based on professional enterprise standards.
+1. Evaluate impact of each achievement based on professional enterprise standards. Impact means real-world outcome, recognition, or demonstrable value — not just having a metric.
 2. Determine if it should be kept or removed.
 3. Check for typos, grammar issues.
 4. Verify relevance to a professional enterprise career path.

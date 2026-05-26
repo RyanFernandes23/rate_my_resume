@@ -16,9 +16,9 @@ Analyze each education entry:
 
 SCORING_RUBRIC (STRICT):
 - 0-3 (POOR): Missing critical details (Degree, Institution), or clearly non-professional.
-- 4-6 (AVERAGE): Basic details present, but lacks relevant coursework, honors, or prestige.
-- 7-8 (STRONG): Solid academic record, relevant coursework mentioned, or high prestige.
-- 9-10 (ELITE): Exceptional GPA, high-prestige institution, honors, or significant relevant achievements.
+- 4-6 (AVERAGE): Basic details present, but lacks relevant coursework, honors, or impact signals.
+- 7-8 (STRONG): Solid academic record, relevant coursework, high prestige, or demonstrated application of learning (projects, leadership).
+- 9-10 (ELITE): Exceptional GPA, high-prestige institution, honors, or significant achievements. Impact and application matter alongside prestige.
 
 STRICTNESS RULES:
 - BE CRITICAL. Scoring should be normalized so a 'good' resume gets a 7.

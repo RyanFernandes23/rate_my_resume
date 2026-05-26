@@ -4,10 +4,10 @@ from langchain_core.prompts import ChatPromptTemplate
 BASE_CERTIFICATIONS_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the certifications section below with production-grade enterprise expectations in mind.
 
 SCORING_RUBRIC:
-- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No link or date.
+- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No evidence the knowledge was applied.
 - 2-3 (AVERAGE): Recognized certification but from a lower-tier provider or missing details.
-- 4 (STRONG): Industry-recognized certification (e.g., AWS, Google, Microsoft, CFA) with proper details.
-- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present.
+- 4 (STRONG): Industry-recognized certification (e.g., AWS, Google, Microsoft, CFA) with proper details, or a lesser cert with evidence of applied knowledge.
+- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present and evidence of practical application.
 
 Analyze each certification entry:
 1. Check if organization/issuer name is valid and respected in professional enterprise roles.

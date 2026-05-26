@@ -20,19 +20,20 @@ For each project entry, your response must include:
       - "label": A short description of the rewrite approach (e.g., "Quantified impact", "Added technical depth", "Clarified outcome").
       - "content": A rewritten version that actually improves the bullet. Use REAL metrics if you can infer them from context, otherwise describe what metric the user should add without using placeholder tokens.
 
-Quantify outcomes with percentages, dollar amounts, or time saved wherever possible.
+Highlight real-world outcomes — users served, problem solved, efficiency gained, or complexity managed.
 
 SCORING_RUBRIC (STRICT):
-- 0-11 (POOR): Tutorial-level projects (e.g., Todo app, basic blog), CRUD without complexity, or ZERO metrics.
-- 12-17 (AVERAGE): Solid personal projects with a complete tech stack but limited real-world usage or scale.
-- 18-21 (STRONG): Technically complex projects with real users or clear performance metrics.
-- 22-25 (EXPERT): Production-grade applications, major open-source contributions, or projects solving highly advanced problems.
+- 0-11 (POOR): Tutorial-level projects (e.g., Todo app, basic blog), CRUD without complexity, or no clear impact.
+- 12-17 (AVERAGE): Solid personal projects with a complete tech stack but limited real-world usage or impact.
+- 18-21 (STRONG): Projects with real users, tangible outcomes, or meaningful complexity. Impact matters more than having exact numbers.
+- 22-25 (EXPERT): Production-grade applications, major open-source contributions, or projects solving highly advanced problems with demonstrated real-world value.
 
 General Guidelines:
 - BE HIGHLY CRITICAL. Penalize heavily if the project looks like a generic classroom assignment.
-- Focus on technical complexity and individual contribution.
-- If bullets lack metrics, provide concrete advice on WHAT metric would be relevant (e.g., "Add metrics like accuracy percentage, users served, or performance improvement").
-- Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric the user should add.
+- Focus on technical complexity, individual contribution, and real-world outcome.
+- IMPACT matters more than raw metrics. A project that solved a real problem for actual users scores higher than one with numbers but trivial scope.
+- If impact is unclear, provide concrete advice on how to articulate the outcome (e.g., "Describe who used this and what problem it solved").
+- Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric or outcome the user should describe.
 
 IMPORTANT: Output MUST be a valid JSON object with a key "entries" which is a list of objects, one for each project entry.
 

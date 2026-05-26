@@ -21,20 +21,20 @@ IMPORTANT: If education entries exist, do NOT suggest "Add formal education". On
 - If exp < 2 years: Keep details.
 SCORING (0-10):
 - 0-3 (POOR): Missing major/degree, unrecognizable institution.
-- 4-6 (AVERAGE): Recognized university but average performance.
-- 7-8 (STRONG): High GPA, relevant major, recognized institution.
-- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors.
+- 4-6 (AVERAGE): Recognized university but average performance or limited application of learning.
+- 7-8 (STRONG): High GPA, relevant major, recognized institution, or demonstrated application (projects, leadership).
+- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors or significant real-world application.
 
 ### CERTIFICATIONS EVALUATION:
 Check for industry-recognized providers (AWS, Google, Microsoft, CFA, etc.).
 SCORING (0-5):
-- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No link or date.
+- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No evidence the knowledge was applied.
 - 2-3 (AVERAGE): Recognized certification but from a lower-tier provider or missing details.
-- 4 (STRONG): Industry-recognized certification with proper details.
-- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present.
+- 4 (STRONG): Industry-recognized certification with proper details, or a lesser cert with evidence of practical application.
+- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present and evidence of applied knowledge.
 
 ### ACHIEVEMENTS EVALUATION:
-- Achievements: Look for quantifiable impact and professional relevance.
+- Achievements: Look for real-world impact, recognition, and professional relevance. Impact means demonstrable outcome or value — not just having a number.
 SCORING (0-10):
 - Achievements (10pts): up to 10 points based on quality and impact.
 
