@@ -68,7 +68,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
         )
         email_valid = False
-        email_suggestions("Add a professional email address")
+        email_suggestions.append("Add a professional email address")
     elif resume.email:
         # Basic email format check
         import re
