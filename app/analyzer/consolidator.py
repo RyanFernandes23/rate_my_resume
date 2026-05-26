@@ -13,7 +13,7 @@ async def consolidate_analysis(
     projects_analysis,
     skills_analysis,
     education_analysis,
-    achievements_hobbies_analysis,
+    achievements_analysis,
     certifications_analysis,
     job_role_suggestions
 ):
