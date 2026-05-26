@@ -191,7 +191,7 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             )
             links_valid = False
     else:
-        missing_important.append("GitHub profile (if you have projects)")
+        missing_important.append("Portfolio/website link (optional, if you have one)")
 
     if resume.links:
         current_links.extend(resume.links)
@@ -203,11 +203,11 @@ def analyze_basic_info(resume) -> BasicInfoAnalysis:
             AnalysisIssue(
                 issue="No professional links provided",
                 severity="medium",
-                reason="At least LinkedIn or GitHub is recommended",
+                reason="At least a LinkedIn profile is recommended",
             )
         )
         links_suggestions.append(
-            "Hey, I don't see any professional links. You should add your LinkedIn and GitHub profiles to showcase your work and network."
+            "Hey, I don't see any professional links. You should add your LinkedIn or portfolio/website link."
         )
 
     links_analysis = LinksAnalysis(

@@ -24,7 +24,14 @@ def _extract_pdf(file_path: str) -> str:
     if page_count > MAX_PAGES:
         raise ResumeTooLongError(page_count, MAX_PAGES)
 
-    return pymupdf4llm.to_markdown(file_path)
+    text = pymupdf4llm.to_markdown(file_path)
+
+    if len(text.strip()) < 100:
+        doc = pymupdf.open(file_path)
+        text = "\n\n".join(page.get_text().strip() for page in doc)
+        doc.close()
+
+    return text
 
 
 def _extract_docx(file_path: str) -> str:
