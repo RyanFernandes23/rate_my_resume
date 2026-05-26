@@ -78,7 +78,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     # Prepare combined data
     edu_data = format_education_data(resume.education) if resume.education else "[]"
     cert_data = format_certifications_data(resume.certifications) if resume.certifications else "[]"
-    ach_data = format_achievements_data(resume.achievements)
+    ach_data = format_achievements_data(resume.achievements, resume.hobbies, resume.extra_curricular)
     
     # Calculate years of exp for education context
     total_years = resume.total_years_experience or 0
@@ -159,4 +159,4 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     except Exception as e:
         print(f"Metadata combined analysis failed: {e}. Falling back to defaults.")
         # Simplified fallback - you could import and call original fallbacks here
-        return [], [], AchievementsHobbiesAnalysis(achievements=[], hobbies=[], suggestions=[], score=0.0)
+        return [], [], AchievementsAnalysis(achievements=[], suggestions=[], score=0.0)

@@ -62,7 +62,7 @@ async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClie
         projects_analysis=projects_analysis,
         skills_analysis=skills_analysis,
         education_analysis=education_analysis,
-        achievements_hobbies_analysis=achievements_hobbies_analysis,
+        achievements_analysis=achievements_analysis,
         certifications_analysis=certifications_analysis,
         job_role_suggestions=job_role_suggestions,
         overall_summary=overall_summary,
