@@ -16,14 +16,14 @@ from .prompts.achievements_prompts import get_achievements_prompt, format_achiev
 METADATA_SYSTEM_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the Education, Certifications, and Achievements/Hobbies sections of this resume.
 
 ### EDUCATION EVALUATION:
-IMPORTANT: If education entries exist, do NOT suggest "Add formal education". Only give feedback on how to improve existing entries.
-- If exp >= 2 years: Suggest condensing.
-- If exp < 2 years: Keep details.
+IMPORTANT: If education entries exist, do NOT suggest \"Add formal education\". Only give feedback on how to improve existing entries.
+- If exp >= 2 years: Suggest condensing (institution name + dates only).
+- If exp < 2 years: Check for degree, institution, and performance details.
 SCORING (0-10):
-- 0-3 (POOR): Missing major/degree, unrecognizable institution.
-- 4-6 (AVERAGE): Recognized university but average performance or limited application of learning.
-- 7-8 (STRONG): High GPA, relevant major, recognized institution, or demonstrated application (projects, leadership).
-- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors or significant real-world application.
+- 0-3 (POOR): Missing critical details like Degree or Institution name.
+- 4-6 (AVERAGE): Recognized institution but missing degree details or average performance.
+- 7-8 (STRONG): High performance (GPA/%), clear degree/major, recognized institution.
+- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT, IIM) with exceptional honors or honors.
 
 ### CERTIFICATIONS EVALUATION:
 Check for industry-recognized providers (AWS, Google, Microsoft, CFA, etc.).

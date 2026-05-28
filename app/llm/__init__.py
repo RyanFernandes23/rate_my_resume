@@ -45,9 +45,14 @@ def _normalize_data(data: dict) -> dict:
                 exp["descriptions"] = []
     if "education" in data and data["education"]:
         for edu in data["education"]:
-            for f in ("score", "location", "start_date", "end_date"):
+            for f in ("score", "location", "start_date", "end_date", "degree", "institution"):
                 if edu.get(f) is None:
                     edu[f] = None
+            # Sync name and institution
+            if edu.get("institution") and not edu.get("name"):
+                edu["name"] = edu["institution"]
+            elif edu.get("name") and not edu.get("institution"):
+                edu["institution"] = edu["name"]
     if "projects" in data and data["projects"]:
         for proj in data["projects"]:
             if proj.get("descriptions") is None:
@@ -82,7 +87,7 @@ Return a valid JSON object with these exact fields:
 - links (array of URL strings)
 - experience (array of objects with: company, title, start_date, end_date, descriptions)
 - total_years_experience (number or null)
-- education (array of objects with: name, score, start_date, end_date, location)
+- education (array of objects with: institution, degree, score, start_date, end_date, location)
 - skills (array of strings)
 - projects (array of objects with: name, descriptions, link)
 - achievements (array of objects with: title, descriptions)
@@ -101,14 +106,15 @@ Field-by-field requirements:
 - links: array of any additional URLs found
 - experience[].company: company name
 - experience[].title: job title
-- experience[].start_date: start date (e.g., "July 2025" or "2025-07")
-- experience[].end_date: end date or "Present"
+- experience[].start_date: start date (e.g., \"July 2025\" or \"2025-07\")
+- experience[].end_date: end date or \"Present\"
 - experience[].descriptions: ARRAY of strings, ONE string per bullet point
 - total_years_experience: calculate years from all experience entries (e.g., 2.5)
-- education[].name: institution/university name
-- education[].score: GPA, percentage, or grade (e.g., "8.5 CGPA", "75%")
+- education[].institution: institution/university name (e.g., \"Harvard University\")
+- education[].degree: full degree name (e.g., \"Bachelor of Science in Computer Science\")
+- education[].score: GPA, percentage, or grade (e.g., \"8.5 CGPA\", \"75%\")
 - education[].start_date: start year
-- education[].end_date: end year or "Present"
+- education[].end_date: end year or \"Present\"
 - education[].location: city, state/country of institution
 - skills: ARRAY of strings, each skill as separate item
 - projects[].name: project title

@@ -58,7 +58,8 @@ def format_education_data(education_entries):
     for i, edu in enumerate(education_entries):
         edu_data.append({
             "index": i,
-            "name": edu.name,
+            "institution": edu.institution or edu.name,
+            "degree": edu.degree,
             "score": edu.score,
             "start_date": edu.start_date,
             "end_date": edu.end_date,

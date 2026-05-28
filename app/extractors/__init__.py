@@ -19,19 +19,29 @@ class ResumeTooLongError(Exception):
 def _extract_pdf(file_path: str) -> str:
     doc = pymupdf.open(file_path)
     page_count = len(doc)
+    # Get raw text with sorting for better layout preservation in fallback
+    raw_text = "\n\n".join(page.get_text(sort=True).strip() for page in doc)
     doc.close()
 
     if page_count > MAX_PAGES:
         raise ResumeTooLongError(page_count, MAX_PAGES)
 
-    text = pymupdf4llm.to_markdown(file_path)
+    try:
+        md_text = pymupdf4llm.to_markdown(file_path)
+    except Exception:
+        return raw_text
 
-    if len(text.strip()) < 100:
-        doc = pymupdf.open(file_path)
-        text = "\n\n".join(page.get_text().strip() for page in doc)
-        doc.close()
+    # Check for missing critical info (like email) in markdown that exists in raw text
+    has_email_raw = "@" in raw_text
+    has_email_md = "@" in md_text
+    
+    # If markdown is missing an email that was in the raw text, or is significantly shorter
+    # (indicating it might have skipped sections/tables), fall back to raw text.
+    # LLMs handle raw text well, so it's safer than missing data.
+    if (has_email_raw and not has_email_md) or (len(md_text) < len(raw_text) * 0.85):
+        return raw_text
 
-    return text
+    return md_text
 
 
 def _extract_docx(file_path: str) -> str:
