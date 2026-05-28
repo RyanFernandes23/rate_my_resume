@@ -14,6 +14,7 @@ from .repositories.analysis import AnalysisRepository
 from .extractors import extract as extract_text, ResumeTooLongError
 from .analyzer import analyze_resume as run_analyzers
 from .analyzer.batch_rewriter import batch_rewrite_suggestions
+from .analyzer.repetition_checker import find_repeated_words
 from .utils import transform_to_frontend_format
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class PipelineContext:
     filename: str
     jd: Optional[str] = None
     user_id: Optional[str] = None
+    target_tier: str = "fresher"
 
 
 @dataclass
@@ -115,7 +117,7 @@ class AnalysisPipeline:
             yield ProgressEvent("analyze_education", 65, "Analyzing education...")
             yield ProgressEvent("analyze_cert", 75, "Analyzing certifications...")
 
-            analysis = await run_analyzers(resume, self._llm_client, self._fast_llm_client, jd=ctx.jd)
+            analysis = await run_analyzers(resume, self._llm_client, self._fast_llm_client, jd=ctx.jd, target_tier=ctx.target_tier)
             logger.info("[TIMING] analyzers (all): %.2fs", time.perf_counter() - _t)
 
             _t = time.perf_counter()
@@ -126,11 +128,18 @@ class AnalysisPipeline:
             # --- Filter high-scoring entries (≥80% of max) ---
             self._filter_high_scoring_entries(result)
 
+            # --- Word repetition check ---
+            repetition_data = self._check_repetitions(resume)
+            result["repetition_warnings"] = repetition_data
+
             _t = time.perf_counter()
             # --- Rewrites ---
             yield ProgressEvent("rewrite", 92, "Generating improvement suggestions...")
-            await self._attach_rewrites(result)
+            await self._attach_rewrites(result, repetition_data)
             logger.info("[TIMING] rewrites: %.2fs", time.perf_counter() - _t)
+
+            # --- Check rewrites for overused words ---
+            self._check_rewrite_repetitions(result)
 
             # --- Credit deduction ---
             if ctx.user_id:
@@ -179,8 +188,52 @@ class AnalysisPipeline:
                 except PermissionError:
                     pass
 
-    async def _attach_rewrites(self, result: dict) -> None:
+    def _check_repetitions(self, resume) -> dict[str, list[str]]:
+        sections = {}
+        if resume.experience:
+            texts = []
+            for exp in resume.experience:
+                texts.extend(exp.descriptions)
+            if texts:
+                sections["experience"] = " ".join(texts)
+        if resume.projects:
+            texts = []
+            for proj in resume.projects:
+                texts.extend(proj.descriptions)
+            if texts:
+                sections["projects"] = " ".join(texts)
+        if resume.achievements:
+            texts = []
+            for ach in resume.achievements:
+                texts.extend(ach.descriptions)
+            if texts:
+                sections["achievements"] = " ".join(texts)
+        if resume.skills:
+            sections["skills"] = ", ".join(resume.skills)
+        if not sections:
+            return {}
+        return find_repeated_words(sections)
+
+    async def _attach_rewrites(self, result: dict, repetition_data: dict[str, list[str]] | None = None) -> None:
         actionable_suggestions = []
+
+        # Collect all words flagged as repeated across the entire resume
+        accumulated_set: set[str] = set()
+        if repetition_data:
+            for word_list in repetition_data.values():
+                for word in word_list:
+                    if word:
+                        accumulated_set.add(word.lower())
+
+        # Also include words from any previous rephrased_suggestions
+        existing_warnings = result.get("repetition_warnings", {})
+        rephrased = existing_warnings.get("rephrased_suggestions", {})
+        if isinstance(rephrased, dict):
+            for word_list in rephrased.values():
+                for word in word_list:
+                    if word:
+                        accumulated_set.add(word.lower())
+
         for section in result.get("sections", []):
             if section["name"] in ("Experience", "Projects"):
                 section_key = section["name"].lower()
@@ -189,6 +242,7 @@ class AnalysisPipeline:
                     for bullet_idx, sug_item in enumerate(
                         entry.get("suggestions", [])
                     ):
+                        repeated_words = (repetition_data or {}).get(section_key, [])
                         if isinstance(sug_item, dict):
                             actionable_suggestions.append(
                                 {
@@ -197,6 +251,8 @@ class AnalysisPipeline:
                                     "bullet_index": bullet_idx,
                                     "bullet": sug_item.get("original_bullet", ""),
                                     "advice": sug_item.get("advice", ""),
+                                    "context": sug_item.get("context", ""),
+                                    "repeated_words": repeated_words,
                                 }
                             )
                         else:
@@ -207,6 +263,8 @@ class AnalysisPipeline:
                                     "bullet_index": bullet_idx,
                                     "bullet": str(sug_item),
                                     "advice": "",
+                                    "context": "",
+                                    "repeated_words": repeated_words,
                                 }
                             )
 
@@ -214,7 +272,7 @@ class AnalysisPipeline:
             return
 
         rewrites = await batch_rewrite_suggestions(
-            actionable_suggestions, self._llm_client
+            actionable_suggestions, self._llm_client, accumulated_used_words=accumulated_set
         )
         for sug in actionable_suggestions:
             section_key = sug["section"]
@@ -226,13 +284,14 @@ class AnalysisPipeline:
                 )
             )
             key = f"{section_key}__{entry_idx}__{bullet_idx}"
+            rewrite = rewrites.get(key, None)
             if isinstance(entry_suggestions[bullet_idx], dict):
-                entry_suggestions[bullet_idx]["rewrites"] = rewrites.get(key, [])
+                entry_suggestions[bullet_idx]["rewrites"] = [rewrite] if rewrite else []
             else:
                 entry_suggestions[bullet_idx] = {
                     "original_bullet": sug["bullet"],
                     "advice": entry_suggestions[bullet_idx],
-                    "rewrites": rewrites.get(key, []),
+                    "rewrites": [rewrite] if rewrite else [],
                 }
 
     @staticmethod
@@ -270,3 +329,33 @@ class AnalysisPipeline:
                 if not any(section in item_lower for section in high_scoring_sections):
                     filtered.append(item)
             result["areas_for_improvement"] = filtered
+
+
+    @staticmethod
+    def _check_rewrite_repetitions(result: dict) -> None:
+        sections = {}
+        for section_key in ("experience_analysis", "projects_analysis"):
+            entries = result.get(section_key, [])
+            texts = []
+            for entry in entries:
+                for sug in entry.get("suggestions", []):
+                    for rewrite in sug.get("rewrites", []):
+                        content = rewrite.get("content", "") if isinstance(rewrite, dict) else ""
+                        if content:
+                            texts.append(content)
+            if texts:
+                sections[section_key] = " ".join(texts)
+        if not sections:
+            return
+        repeated = find_repeated_words(sections)
+        rewrites_warnings = {}
+        for section_name, words in repeated.items():
+            if words:
+                display_name = "Experience" if "experience" in section_name else "Projects"
+                rewrites_warnings[display_name] = words
+        if rewrites_warnings:
+            existing = result.get("repetition_warnings", {})
+            existing["rephrased_suggestions"] = {}
+            for section, word_list in rewrites_warnings.items():
+                existing["rephrased_suggestions"][section] = word_list
+            result["repetition_warnings"] = existing

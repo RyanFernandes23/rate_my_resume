@@ -3,130 +3,125 @@ import asyncio
 import json
 import logging
 import re
+from typing import Any
 from ..llm.protocol import LLMClient
-from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_batch_rewriter_data
+from .prompts.batch_rewriter_prompts import get_batch_rewriter_prompt, format_multi_bullet_data
+from .repetition_checker import CORE_STOPWORDS
 
 logger = logging.getLogger(__name__)
+
+# Pattern to find meaningful words (4+ chars, not core stopwords)
+_SIGNIFICANT_WORD_RE = re.compile(r"\b[a-z]{4,}\b")
 
 
 def _clean_json_response(content: str) -> str:
     """Extract the first JSON object from LLM response, ignoring markdown fences and preamble text."""
     text = content.strip()
 
-    # Strategy 1: Find JSON inside markdown code fences (```json ... ``` or ``` ... ```)
     fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
     if fence_match:
         return fence_match.group(1).strip()
 
-    # Strategy 2: Find the first top-level JSON object anywhere in the text
     brace_match = re.search(r'\{.*\}', text, re.DOTALL)
     if brace_match:
         return brace_match.group(0).strip()
 
-    # Fallback: return original text (will fail at json.loads and be caught)
     return text
 
 
-def _parse_rewrites_from_response(json_str: str, suggestion_key: str):
-    """Parse rewrite options from LLM JSON response."""
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON from batch rewriter: {e}")
-        logger.error(f"Response was: {json_str[:500]}")
-        return []
-
-    rewrites = []
-
-    # Handle new format: {"rewrites": [{"label": "...", "content": "..."}, ...]}
-    if "rewrites" in data:
-        rewrites_list = data["rewrites"]
-        if isinstance(rewrites_list, list):
-            for item in rewrites_list:
-                if isinstance(item, dict) and "content" in item:
-                    rewrites.append({
-                        "label": item.get("label", "Improved"),
-                        "content": item["content"],
-                    })
-
-    # Handle old format for backward compatibility
-    if not rewrites:
-        label_map = {
-            "action_oriented": "Action-Oriented",
-            "data_driven": "Data-Driven",
-            "leadership_impact": "Leadership/Impact",
-        }
-        for key, label in label_map.items():
-            if key in data:
-                item = data[key]
-                if isinstance(item, dict) and "content" in item:
-                    rewrites.append({
-                        "label": item.get("label", label),
-                        "content": item["content"],
-                    })
-                elif isinstance(item, str):
-                    rewrites.append({
-                        "label": label,
-                        "content": item,
-                    })
-
-    return rewrites
+def _extract_significant_words(text: str) -> set[str]:
+    """Extract words that are likely to be repetitive and should be tracked (e.g. action verbs)."""
+    words = {m.group().lower() for m in _SIGNIFICANT_WORD_RE.finditer(text.lower())}
+    return words - CORE_STOPWORDS
 
 
-async def batch_rewrite_suggestions(actionable_suggestions, llm_client: LLMClient):
-    """Generate rewrite options for multiple suggestions in parallel using LangChain."""
-    rewrites = {}
-    
-    async def process_single_suggestion(sug):
-        section_key = sug["section"]
-        entry_idx = sug["entry_index"]
-        bullet_idx = sug["bullet_index"]
-        suggestion_key = f"{section_key}__{entry_idx}__{bullet_idx}"
+async def batch_rewrite_suggestions(
+    actionable_suggestions: list[dict[str, Any]], 
+    llm_client: LLMClient, 
+    accumulated_used_words: set[str] | None = None
+) -> dict[str, dict[str, str]]:
+    """
+    Generate rephrased bullets in batches to ensure diversity and efficiency.
 
-        try:
-            prompt = get_batch_rewriter_prompt()
-            formatted_data = format_batch_rewriter_data(
-                original_bullet=sug["bullet"],
-                advice=sug.get("advice", ""),
-                context=sug.get("context", ""),
-            )
-            formatted_prompt = prompt.format(**formatted_data)
-
-            response = await llm_client.ainvoke(formatted_prompt)
-            json_str = _clean_json_response(response)
-
-            parsed_rewrites = _parse_rewrites_from_response(json_str, suggestion_key)
-            if parsed_rewrites:
-                return suggestion_key, parsed_rewrites
-            else:
-                logger.warning(f"No rewrites generated for {suggestion_key}")
-                return suggestion_key, []
-
-        except Exception as e:
-            logger.error(f"Error generating rewrites for {suggestion_key}: {e}")
-            return suggestion_key, [
-                {
-                    "label": "Improved",
-                    "content": "Consider revising this bullet to add specific metrics. Add details about the impact of your work.",
-                },
-            ]
-
+    accumulated_used_words: a shared set of significant words already used in previous
+    batches. Updated in-place as batches are processed.
+    """
     if not actionable_suggestions:
         return {}
 
-    # Limit concurrency to avoid Groq 429s
-    semaphore = asyncio.Semaphore(3)
+    if accumulated_used_words is None:
+        accumulated_used_words = set()
 
-    async def throttled_process(sug):
+    # Assign unique IDs for mapping LLM response back to suggestions
+    for i, sug in enumerate(actionable_suggestions):
+        sug["id"] = f"b{i}"
+
+    rewrites = {}
+    _lock = asyncio.Lock()
+
+    # Process in batches of 5 to keep context manageable and ensure variety
+    BATCH_SIZE = 5
+    batches = [actionable_suggestions[i : i + BATCH_SIZE] for i in range(0, len(actionable_suggestions), BATCH_SIZE)]
+
+    async def process_batch(batch_items):
+        nonlocal accumulated_used_words
+
+        # Collect repeated words from all bullets in this batch
+        batch_repeated = set()
+        for item in batch_items:
+            for word in item.get("repeated_words", []):
+                batch_repeated.add(word.lower())
+
+        async with _lock:
+            used_snapshot = sorted(list(accumulated_used_words))
+
+        try:
+            prompt = get_batch_rewriter_prompt(is_batch=True)
+            # Use the first item's context as a proxy for the batch (usually the same section)
+            context = batch_items[0].get("context", "Resume Experience/Projects")
+
+            formatted_data = format_multi_bullet_data(
+                bullets=batch_items,
+                context=context,
+                repeated_words=list(batch_repeated),
+                accumulated_used_words=used_snapshot
+            )
+
+            formatted_prompt = prompt.format(**formatted_data)
+            response = await llm_client.ainvoke(formatted_prompt)
+            json_str = _clean_json_response(response)
+
+            try:
+                batch_results = json.loads(json_str)
+                if not isinstance(batch_results, dict):
+                    logger.error(f"Batch rewriter returned non-dict JSON: {type(batch_results)}")
+                    return
+
+                new_significant_words = set()
+                for item in batch_items:
+                    bullet_id = item["id"]
+                    content = batch_results.get(bullet_id)
+                    if content:
+                        key = f"{item['section']}__{item['entry_index']}__{item['bullet_index']}"
+                        rewrites[key] = {"label": "Rephrased", "content": content}
+                        new_significant_words.update(_extract_significant_words(content))
+
+                async with _lock:
+                    accumulated_used_words.update(new_significant_words)
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON batch response: {e}\nResponse: {json_str[:200]}")
+
+        except Exception as e:
+            logger.error(f"Error in batch rewrite: {e}")
+
+    # Process batches with some concurrency but respect the shared set
+    semaphore = asyncio.Semaphore(2)
+    async def throttled_batch(b):
         async with semaphore:
-            return await process_single_suggestion(sug)
+            await process_batch(b)
 
-    tasks = [throttled_process(sug) for sug in actionable_suggestions]
-    results = await asyncio.gather(*tasks)
-    
-    # Collate results
-    for key, val in results:
-        if val:
-            rewrites[key] = val
+    tasks = [throttled_batch(b) for b in batches]
+    await asyncio.gather(*tasks)
 
     return rewrites

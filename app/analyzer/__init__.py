@@ -14,7 +14,7 @@ from .consolidator import consolidate_analysis
 logger = logging.getLogger(__name__)
 
 
-async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClient = None, jd: str = None) -> ResumeAnalysis:
+async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClient = None, jd: str = None, target_tier: str = "fresher") -> ResumeAnalysis:
     _t0 = time.perf_counter()
 
     basic_info_analysis = analyze_basic_info(resume)
@@ -50,6 +50,7 @@ async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClie
             achievements_analysis,
             certifications_analysis,
             job_role_suggestions,
+            target_tier=target_tier,
         )
     )
     logger.info("[TIMING] consolidate: %.2fs", time.perf_counter() - _t)
