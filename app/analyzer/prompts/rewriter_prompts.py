@@ -11,6 +11,7 @@ Output:
 - If it needs improvement, provide exactly 1 rephrased version that addresses the suggestion
 - NEVER inject metrics, numbers, or percentages that are not in the original bullet
 - Only rephrase how the same message is conveyed — preserve the original meaning and facts
+- Choose a strong action verb that is NOT a generic choice (avoid: built, created, developed, designed, implemented, led, managed, worked, made, wrote unless genuinely the best fit)
 
 Evaluation criteria (check each bullet against these):
 1. Strong action verbs — prefer specific, powerful verbs over weak/generic ones

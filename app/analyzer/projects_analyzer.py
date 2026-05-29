@@ -24,7 +24,7 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-async def analyze_projects(resume, llm_client: LLMClient):
+async def analyze_projects(resume, llm_client: LLMClient, target_tier: str = "fresher"):
     """Analyze all project entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ProjectsAnalysis
 
@@ -35,6 +35,7 @@ async def analyze_projects(resume, llm_client: LLMClient):
     prompt = get_projects_prompt()
     formatted_prompt = prompt.format(
         projects_data=format_projects_data(resume.projects),
+        target_tier=target_tier,
     )
 
     try:

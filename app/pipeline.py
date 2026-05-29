@@ -138,6 +138,9 @@ class AnalysisPipeline:
             await self._attach_rewrites(result, repetition_data)
             logger.info("[TIMING] rewrites: %.2fs", time.perf_counter() - _t)
 
+            # --- Build rephrase map for template builder ---
+            result["rephrase_map"] = self._build_rephrase_map(result)
+
             # --- Check rewrites for overused words ---
             self._check_rewrite_repetitions(result)
 
@@ -330,6 +333,22 @@ class AnalysisPipeline:
                     filtered.append(item)
             result["areas_for_improvement"] = filtered
 
+
+    @staticmethod
+    def _build_rephrase_map(result: dict) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        for sk in ("experience_analysis", "projects_analysis"):
+            prefix = sk.replace("_analysis", "")
+            for entry_idx, entry in enumerate(result.get(sk, [])):
+                for sug_idx, sug in enumerate(entry.get("suggestions", [])):
+                    key = f"{prefix}__{entry_idx}__{sug_idx}"
+                    rewrites = sug.get("rewrites", []) if isinstance(sug, dict) else []
+                    if rewrites:
+                        first = rewrites[0]
+                        content = first.get("content", "") if isinstance(first, dict) else ""
+                        if content:
+                            mapping[key] = content
+        return mapping
 
     @staticmethod
     def _check_rewrite_repetitions(result: dict) -> None:

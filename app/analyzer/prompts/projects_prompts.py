@@ -3,7 +3,19 @@ from langchain_core.prompts import ChatPromptTemplate
 
 
 BASE_PROJECTS_PROMPT = """You are a senior recruiter and resume strategist. 
-Analyze each project entry below and provide a comprehensive assessment with high-standard enterprise expectations in mind.
+Analyze each project entry below and provide a balanced assessment with professional expectations in mind.
+
+Candidate Tier: {target_tier}
+
+FRESHER GUIDANCE (if target_tier is "fresher"):
+- Projects ARE the primary experience for freshers. Score academic, internship, and personal projects generously.
+- Reward initiative, effort, and genuine problem-solving even if outcomes are modest.
+- A well-documented academic project with clear methodology is a strong signal.
+
+EXPERIENCED GUIDANCE (if target_tier is "experienced"):
+- Projects should demonstrate real-world complexity, users served, or tangible outcomes.
+- Personal/tutorial projects should be scored lower unless they show exceptional depth.
+- Focus on technical complexity and individual contribution over effort.
 
 For each project entry, your response must include:
 1. "score": A score from 0-25 based on enterprise standards.
@@ -22,17 +34,16 @@ For each project entry, your response must include:
 
 Highlight real-world outcomes — users served, problem solved, efficiency gained, or complexity managed.
 
-SCORING_RUBRIC (STRICT):
-- 0-11 (POOR): Tutorial-level projects (e.g., Todo app, basic blog), CRUD without complexity, or no clear impact.
-- 12-17 (AVERAGE): Solid personal projects with a complete tech stack but limited real-world usage or impact.
-- 18-21 (STRONG): Projects with real users, tangible outcomes, or meaningful complexity. Impact matters more than having exact numbers.
+SCORING_RUBRIC:
+- 0-7 (POOR): Tutorial-level projects (e.g., Todo app, basic blog), CRUD without complexity, or no clear impact.
+- 8-15 (AVERAGE): Solid personal or academic projects with a complete tech stack but limited real-world usage or impact.
+- 16-21 (STRONG): Projects with real users, tangible outcomes, or meaningful complexity.
 - 22-25 (EXPERT): Production-grade applications, major open-source contributions, or projects solving highly advanced problems with demonstrated real-world value.
 
 General Guidelines:
-- BE HIGHLY CRITICAL. Penalize heavily if the project looks like a generic classroom assignment.
-- Focus on technical complexity, individual contribution, and real-world outcome.
-- IMPACT matters more than raw metrics. A project that solved a real problem for actual users scores higher than one with numbers but trivial scope.
-- If impact is unclear, provide concrete advice on how to articulate the outcome (e.g., "Describe who used this and what problem it solved").
+- For FRESHER candidates: academic and internship projects ARE the primary experience. Reward effort, initiative, and genuine problem-solving generously.
+- For EXPERIENCED candidates: projects should demonstrate real-world complexity, actual users, or business outcomes. Tutorial/personal projects carry less weight.
+- If impact is unclear, provide concrete advice on how to articulate the outcome.
 - Never fabricate numbers. If you can't infer a realistic metric, simply state what type of metric or outcome the user should describe.
 
 IMPORTANT: Output MUST be a valid JSON object with a key "entries" which is a list of objects, one for each project entry.

@@ -41,6 +41,28 @@ def transform_to_frontend_format(
         {"name": "Certifications", "score": sb.certifications_score, "max_score": 5, "suggestions": list(dict.fromkeys([s for cert in (analysis.certifications_analysis or []) for s in cert.suggestions]))},
     ]
 
+    # --- Resume data for template building ---
+    resume_data = None
+    if resume:
+        resume_data = {
+            "name": resume.name,
+            "email": resume.email,
+            "phone": resume.phone,
+            "linkedin": resume.linkedin,
+            "github": resume.github,
+            "location": resume.location,
+            "summary": resume.professional_summary or resume.summary,
+            "links": resume.links,
+            "experience": [e.model_dump() for e in (resume.experience or [])],
+            "education": [e.model_dump() for e in (resume.education or [])],
+            "skills": resume.skills,
+            "projects": [p.model_dump() for p in (resume.projects or [])],
+            "achievements": [a.model_dump() for a in (resume.achievements or [])],
+            "certifications": [c.model_dump() for c in (resume.certifications or [])],
+            "hobbies": resume.hobbies,
+            "extra_curricular": resume.extra_curricular,
+        }
+
     return {
         "total_score": sb.total_score,
         "total_percentage": sb.converted_percentage,
@@ -70,4 +92,5 @@ def transform_to_frontend_format(
         "benchmark_grade": sb.benchmark_grade,
         "target_tier": sb.target_tier,
         "jd_analysis": {"match_score": analysis.jd_analysis.match_score, "compatible_roles": analysis.jd_analysis.compatible_roles, "missing_critical_skills": analysis.jd_analysis.missing_critical_skills, "missing_nice_to_have": analysis.jd_analysis.missing_nice_to_have, "tailoring_recommendations": analysis.jd_analysis.tailoring_recommendations} if analysis.jd_analysis else None,
+        "resume_data": resume_data,
     }

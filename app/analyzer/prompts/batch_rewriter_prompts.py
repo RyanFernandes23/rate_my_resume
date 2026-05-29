@@ -26,22 +26,28 @@ Evaluation criteria (check each bullet against these):
 IMPORTANT: Respond with ONLY the JSON object. No explanation, no markdown, no code fences.
 Example: {{"content": "Your rephrased bullet here."}}"""
 
-BATCH_REWRITER_PROMPT = """You are an expert resume writer. Your task is to rephrase a batch of resume bullets to improve their impact, ensure they follow the STAR method, and maintain diversity in word choice.
+BATCH_REWRITER_PROMPT = """You are an expert resume writer. Your task is to rephrase a batch of resume bullets to improve their impact, ensure they follow the STAR method, and maintain lexical diversity.
 
 Context: {context}
 
 Bullets to rephrase:
 {bullets_data}
 
-Overused words in the original resume (AVOID these): {repeated_words}
-Words used in other rephrased bullets (AVOID these to ensure variety): {accumulated_used_words}
+Overused words in the original resume (ABSOLUTELY AVOID these): {repeated_words}
+Words used in other rephrased bullets (ABSOLUTELY AVOID these): {accumulated_used_words}
 
-Constraints:
+CRITICAL DIVERSITY RULES:
+- Every rephrased bullet in this batch must use DIFFERENT action verbs. No two bullets should start with the same verb.
+- Do NOT use any word from the "Overused" or "Words used in other rewrites" lists — anywhere in the bullet.
+- Scan your own output before responding: if any word appears in more than one bullet, replace it with a synonym.
+- Vary sentence structure: don't start every bullet the same way (e.g., "Developed X...", "Built Y...", "Created Z..." is bad — vary the openings).
+- Only one bullet per batch may use verbs like: built, created, developed, designed, implemented, led, managed, worked, made, wrote.
+- Prefer precise, specific verbs over generic ones: "orchestrated", "engineered", "architected", "spearheaded", "streamlined", "automated", "optimized", "delivered", "established".
+
+Other constraints:
 - Provide exactly one rephrased version for each bullet ID provided.
 - NEVER invent new facts, metrics, or technologies.
-- Use a DIFFERENT and powerful action verb for each bullet in this batch.
-- Ensure the rephrased bullets are concise and follow a result-oriented structure.
-- If a bullet is already excellent, you can return it as-is or slightly polished.
+- If a bullet is already excellent, you can keep it as-is or slightly polished.
 
 Response Format:
 Respond with ONLY a JSON object mapping bullet IDs to their new content.

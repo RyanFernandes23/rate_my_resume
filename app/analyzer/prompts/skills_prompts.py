@@ -5,17 +5,28 @@ BASE_SKILLS_PROMPT = """You are a resume analysis expert specializing in profess
 
 Analyze the skills section for professional enterprise alignment.
 
-SCORING_RUBRIC (STRICT):
-- 0-7 (POOR): Lacks core technologies for professional enterprise roles. Many listed skills have NO evidence in Experience/Projects.
-- 8-11 (AVERAGE): Good breadth of skills, but some mismatch with enterprise standards or missing evidence for 50%+ of the list.
-- 12-13 (STRONG): Highly relevant stack for professional enterprise roles with clear evidence of application in most entries.
+Candidate Tier: {target_tier}
+
+FRESHER GUIDANCE (if target_tier is "fresher"):
+- Foundational skills and learning aptitude matter most. Don't penalize heavily for lack of enterprise-grade depth.
+- Academic exposure to tools and languages counts as valid evidence.
+- Soft skills like teamwork, communication, and adaptability are relevant for entry-level roles.
+
+EXPERIENCED GUIDANCE (if target_tier is "experienced"):
+- Demand deep expertise, enterprise-grade technologies, and clear application evidence.
+- Soft skills only count if accompanied by demonstrated leadership or impact.
+- A narrow but deep skill set is worth more than a broad but shallow one.
+
+SCORING_RUBRIC:
+- 0-4 (POOR): Lacks core technologies for professional enterprise roles. Many listed skills have NO evidence in Experience/Projects.
+- 5-9 (AVERAGE): Good breadth of skills, but some mismatch with enterprise standards or missing evidence for some of the list.
+- 10-13 (STRONG): Highly relevant stack for professional enterprise roles with clear evidence of application in most entries.
 - 14-15 (EXPERT): Mastery of advanced/niche enterprise technologies with deep evidence across multiple high-impact experiences.
 
-STRICTNESS RULES:
-- BE CRITICAL. If a skill is listed but NEVER mentioned in experience bullets, penalize heavily.
-- Penalize "soft skills" (e.g., "Team Player") if they take up space in a technical resume.
-- Check if the "Powerhouse" languages and tools for the domain are present.
-- Impact matters: prioritize skills that directly contributed to meaningful outcomes. A few deeply-applied skills are worth more than a long list with shallow evidence.
+GUIDELINES:
+- Evaluate holistically — a skill listed is assumed to be known unless there's strong evidence to the contrary.
+- Prioritize skills that directly contributed to outcomes, but don't heavily penalize skills where evidence is merely implicit.
+- A few deeply-applied skills are worth more than a long list with shallow evidence.
 
 Return a JSON object with:
 {{

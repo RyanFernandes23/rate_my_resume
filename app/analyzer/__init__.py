@@ -9,6 +9,7 @@ from .experience_analyzer import analyze_experience
 from .projects_analyzer import analyze_projects
 from .metadata_analyzer import analyze_metadata
 from .strategic_analyzer import analyze_strategic
+from .jd_analyzer import analyze_jd
 from .consolidator import consolidate_analysis
 
 logger = logging.getLogger(__name__)
@@ -24,19 +25,21 @@ async def analyze_resume(resume, llm_client: LLMClient, fast_llm_client: LLMClie
 
     _t = time.perf_counter()
     tasks = [
-        analyze_experience(resume, llm_client),
-        analyze_projects(resume, llm_client),
-        analyze_metadata(resume, fast),
-        analyze_strategic(resume, fast, jd),
+        analyze_experience(resume, llm_client, target_tier=target_tier),
+        analyze_projects(resume, llm_client, target_tier=target_tier),
+        analyze_metadata(resume, fast, target_tier=target_tier),
+        analyze_strategic(resume, fast, target_tier=target_tier),
+        analyze_jd(resume, jd, fast, target_tier=target_tier),
     ]
 
     results = await asyncio.gather(*tasks)
-    logger.info("[TIMING] all 4 parallel analyzers: %.2fs", time.perf_counter() - _t)
+    logger.info("[TIMING] all 5 parallel analyzers: %.2fs", time.perf_counter() - _t)
     
     experience_analysis = results[0]
     projects_analysis = results[1]
     education_analysis, certifications_analysis, achievements_analysis = results[2]
-    skills_analysis, job_role_suggestions, jd_analysis = results[3]
+    skills_analysis, job_role_suggestions = results[3]
+    jd_analysis = results[4]
 
     _t = time.perf_counter()
     score_breakdown, overall_summary, strengths, areas_for_improvement, job_role_suggestions = (

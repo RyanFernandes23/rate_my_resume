@@ -217,7 +217,7 @@ class TestStrategicAnalyzer:
                 "suggestions": [],
             }],
         }))
-        skills, roles, jd = await analyze_strategic(make_minimal_resume(), client)
+        skills, roles = await analyze_strategic(make_minimal_resume(), client)
         assert len(roles) == 1, "Expected job roles to be processed, got fallback"
         assert roles[0].role == "Senior Engineer"
         assert skills.score == 14.0  # mock value, not fallback 10.0

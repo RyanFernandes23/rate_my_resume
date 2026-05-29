@@ -24,7 +24,7 @@ def _clean_suggestion(suggestion: str) -> str:
     return suggestion
 
 
-async def analyze_experience(resume, llm_client: LLMClient):
+async def analyze_experience(resume, llm_client: LLMClient, target_tier: str = "fresher"):
     """Analyze all experience entries using LLM with externalized prompts."""
     from ..analyzer.schemas import ExperienceAnalysis
 
@@ -35,6 +35,7 @@ async def analyze_experience(resume, llm_client: LLMClient):
     prompt = get_experience_prompt()
     formatted_prompt = prompt.format(
         experience_data=format_experience_data(resume.experience),
+        target_tier=target_tier,
     )
 
     try:
