@@ -6,6 +6,38 @@ from ..analyzer.schemas import ScoreBreakdown, ResumeAnalysis
 from .prompts.consolidator_prompts import get_consolidator_prompt, format_consolidator_data
 
 
+def _calculate_tiered_score(
+    basic_info_score, experience_score, projects_score,
+    skills_score, education_score, ach_score, certifications_score,
+    target_tier="fresher",
+):
+    CORE_SECTIONS = {"basic_info", "experience", "skills"}
+
+    if target_tier == "experienced":
+        SUPP_THRESHOLD = 0.35
+    else:
+        SUPP_THRESHOLD = 0.2
+
+    section_weights = [
+        (basic_info_score, 10, "basic_info"),
+        (experience_score, 25, "experience"),
+        (projects_score, 25, "projects"),
+        (skills_score, 15, "skills"),
+        (education_score, 10, "education"),
+        (ach_score, 10, "achievements"),
+        (certifications_score, 5, "certifications"),
+    ]
+
+    active_score = 0.0
+    active_max = 0.0
+    for score, max_score, name in section_weights:
+        if name in CORE_SECTIONS or (max_score > 0 and score / max_score >= SUPP_THRESHOLD):
+            active_score += score
+            active_max += max_score
+
+    return active_score, active_max
+
+
 async def consolidate_analysis(
     llm_client: LLMClient,
     basic_info_analysis,
@@ -15,7 +47,8 @@ async def consolidate_analysis(
     education_analysis,
     achievements_analysis,
     certifications_analysis,
-    job_role_suggestions
+    job_role_suggestions,
+    target_tier: str = "fresher",
 ):
     """Consolidate all analyses and calculate final scores."""
 
@@ -24,13 +57,13 @@ async def consolidate_analysis(
     if basic_info_analysis:
         bi_score = 10.0
         if not basic_info_analysis.name.is_valid:
-            bi_score -= 2
+            bi_score -= 1
         if not basic_info_analysis.email.is_valid:
-            bi_score -= 2
+            bi_score -= 1
         if not basic_info_analysis.phone.is_valid:
-            bi_score -= 2
+            bi_score -= 1
         if not basic_info_analysis.links.is_valid:
-            bi_score -= 2
+            bi_score -= 1
         basic_info_score = max(0, bi_score)
     else:
         basic_info_score = 0
@@ -85,42 +118,43 @@ async def consolidate_analysis(
     # Job Role Fit Score - NOT scored, just suggestions
     job_role_fit_score = 0
 
-    # Redistribute weights: core sections always count; supplementary sections
-    # (Projects, Education, Achievements, Certifications) dropped if score <50% max
-    CORE_SECTIONS = {"basic_info", "experience", "skills"}
-    SUPP_THRESHOLD = 0.3
-
-    section_weights = [
-        (basic_info_score, 10, "basic_info"),
-        (experience_score, 25, "experience"),
-        (projects_score, 25, "projects"),
-        (skills_score, 15, "skills"),
-        (education_score, 10, "education"),
-        (ach_score, 10, "achievements"),
-        (certifications_score, 5, "certifications"),
-    ]
-
-    active_score = 0.0
-    active_max = 0.0
-    for score, max_score, name in section_weights:
-        if name in CORE_SECTIONS or (max_score > 0 and score / max_score >= SUPP_THRESHOLD):
-            active_score += score
-            active_max += max_score
+    active_score, active_max = _calculate_tiered_score(
+        basic_info_score,
+        experience_score,
+        projects_score,
+        skills_score,
+        education_score,
+        ach_score,
+        certifications_score,
+        target_tier=target_tier,
+    )
 
     total_percentage = (active_score / active_max * 100) if active_max > 0 else 0.0
     total_score = total_percentage
     converted_percentage = total_percentage if total_percentage > 0 else 0
 
-    # Calculate Benchmark Grade (Unified Standard)
-    if converted_percentage >= 90:
-        grade = "Principal / Director Ready"
-    elif converted_percentage >= 80:
-        grade = "Senior / Team Lead Ready"
-    elif converted_percentage >= 65:
-        grade = "Software Engineer II / Mid-Level"
+    # Calculate Benchmark Grade (Tier-Aware)
+    if target_tier == "experienced":
+        if converted_percentage >= 90:
+            grade = "Principal / Director Ready"
+        elif converted_percentage >= 80:
+            grade = "Senior / Team Lead Ready"
+        elif converted_percentage >= 60:
+            grade = "Software Engineer II / Mid-Level"
+        else:
+            grade = "Associate / Junior"
     else:
-        grade = "Associate / Junior"
+        # Fresher: lower bars — less experience needed to reach each grade
+        if converted_percentage >= 80:
+            grade = "Principal / Director Ready"
+        elif converted_percentage >= 70:
+            grade = "Senior / Team Lead Ready"
+        elif converted_percentage >= 50:
+            grade = "Software Engineer II / Mid-Level"
+        else:
+            grade = "Associate / Junior"
 
+    tier_label = "Fresher (0-2 years)" if target_tier == "fresher" else "Experienced (3+ years)"
     score_breakdown = ScoreBreakdown(
         basic_info_score=round(basic_info_score, 2),
         experience_score=round(experience_score, 2),
@@ -133,7 +167,7 @@ async def consolidate_analysis(
         total_score=round(total_score, 2),
         total_percentage=round(total_percentage, 2),
         converted_percentage=round(converted_percentage, 2),
-        target_tier="Standard Enterprise",
+        target_tier=tier_label,
     )
     score_breakdown.benchmark_grade = grade
 

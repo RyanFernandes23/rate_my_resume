@@ -172,6 +172,7 @@ class ScoreBreakdown(BaseModel):
 
 class ResumeAnalysis(BaseModel):
     score_breakdown: ScoreBreakdown
+    repetition_warnings: dict[str, list[str]] = Field(default_factory=dict)
     basic_info_analysis: BasicInfoAnalysis
     experience_analysis: List[ExperienceAnalysis] = Field(default_factory=list)
     projects_analysis: List[ProjectsAnalysis] = Field(default_factory=list)

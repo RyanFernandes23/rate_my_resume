@@ -1,6 +1,7 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -26,7 +27,7 @@ from app.pipeline import AnalysisPipeline, PipelineContext, ProgressEvent, Pipel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.rate_limit import limiter
-from app.routers import auth, credits, payments, history
+from app.routers import auth, credits, payments, history, templates
 from app.dependencies import verify_premium_user, get_optional_user
 from app.routers.auth import get_current_user
 
@@ -38,6 +39,11 @@ app.include_router(auth.router)
 app.include_router(credits.router)
 app.include_router(payments.router)
 app.include_router(history.router)
+app.include_router(templates.router)
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.middleware("http")
@@ -78,6 +84,13 @@ def _validate_jd(jd: Optional[str]) -> None:
     if jd and len(jd) > 5000:
         raise HTTPException(
             status_code=400, detail="Job description exceeds maximum length of 5000 characters"
+        )
+
+
+def _validate_target_tier(tier: str) -> None:
+    if tier not in ("fresher", "experienced"):
+        raise HTTPException(
+            status_code=400, detail="target_tier must be 'fresher' or 'experienced'"
         )
 
 
@@ -128,10 +141,12 @@ async def analyze_resume_stream(
 async def analyze_resume_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
+    target_tier: str = "fresher",
     current_user: dict = Depends(verify_premium_user),
 ):
     user_id = current_user.get("id")
     _validate_jd(jd)
+    _validate_target_tier(target_tier)
     content = await file.read()
     _validate_resume_file(file, content)
 
@@ -140,6 +155,7 @@ async def analyze_resume_endpoint(
         filename=file.filename,
         jd=jd,
         user_id=user_id,
+        target_tier=target_tier,
     )
     pipeline = get_pipeline()
 
@@ -181,10 +197,12 @@ async def _collect_sync_result(
 async def analyze_resume_stream_endpoint(
     file: UploadFile = File(...),
     jd: Optional[str] = None,
+    target_tier: str = "fresher",
     current_user: dict = Depends(verify_premium_user),
 ):
     user_id = current_user.get("id")
     _validate_jd(jd)
+    _validate_target_tier(target_tier)
     content = await file.read()
     _validate_resume_file(file, content)
 
@@ -193,6 +211,7 @@ async def analyze_resume_stream_endpoint(
         filename=file.filename,
         jd=jd,
         user_id=user_id,
+        target_tier=target_tier,
     )
     pipeline = get_pipeline()
 

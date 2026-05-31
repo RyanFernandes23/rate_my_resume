@@ -1,7 +1,7 @@
 """Education analyzer prompt templates using LangChain."""
 from langchain_core.prompts import ChatPromptTemplate
 
-BASE_EDUCATION_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the education section below with production-grade enterprise expectations in mind.
+BASE_EDUCATION_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the education section below with professional expectations in mind.
 
 Experience Context: Total years of experience = {{total_years}} years
 - If total_years >= 2: Generally suggest condensing education (university name + dates only).
@@ -14,15 +14,15 @@ Analyze each education entry:
 4. Check for location information.
 5. Apply experience-based logic to suggestions.
 
-SCORING_RUBRIC (STRICT):
-- 0-3 (POOR): Missing critical details (Degree, Institution), or clearly non-professional.
-- 4-6 (AVERAGE): Basic details present, but lacks relevant coursework, honors, or impact signals.
+SCORING_RUBRIC:
+- 0-2 (POOR): Missing critical details (Degree, Institution), or clearly non-professional.
+- 3-6 (AVERAGE): Basic details present, may lack some refinements like honors or coursework.
 - 7-8 (STRONG): Solid academic record, relevant coursework, high prestige, or demonstrated application of learning (projects, leadership).
-- 9-10 (ELITE): Exceptional GPA, high-prestige institution, honors, or significant achievements. Impact and application matter alongside prestige.
+- 9-10 (ELITE): Exceptional GPA, high-prestige institution, honors, or significant achievements.
 
-STRICTNESS RULES:
-- BE CRITICAL. Scoring should be normalized so a 'good' resume gets a 7.
-- Penalize heavily for missing details if entry is present.
+GUIDELINES:
+- Score fairly — a complete education entry with degree and institution should generally land in the AVERAGE range.
+- Don't penalize for missing "honors" or "coursework" if the core details (degree, institution) are present.
 - VALIDATION: The analyzer MUST first confirm education entries exist. If they do, do NOT suggest 'Add formal education' in the issues. Only provide improvement advice if the *existing* entry is weak.
 
 For each education entry, return a JSON object with:
@@ -58,7 +58,8 @@ def format_education_data(education_entries):
     for i, edu in enumerate(education_entries):
         edu_data.append({
             "index": i,
-            "name": edu.name,
+            "institution": edu.institution or edu.name,
+            "degree": edu.degree,
             "score": edu.score,
             "start_date": edu.start_date,
             "end_date": edu.end_date,

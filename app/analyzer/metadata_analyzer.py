@@ -16,25 +16,25 @@ from .prompts.achievements_prompts import get_achievements_prompt, format_achiev
 METADATA_SYSTEM_PROMPT = """You are a senior recruiter specialized in professional enterprise roles. Analyze the Education, Certifications, and Achievements/Hobbies sections of this resume.
 
 ### EDUCATION EVALUATION:
-IMPORTANT: If education entries exist, do NOT suggest "Add formal education". Only give feedback on how to improve existing entries.
-- If exp >= 2 years: Suggest condensing.
-- If exp < 2 years: Keep details.
+IMPORTANT: If education entries exist, do NOT suggest \"Add formal education\". Only give feedback on how to improve existing entries.
+- If exp >= 2 years: Suggest condensing (institution name + dates only).
+- If exp < 2 years: Check for degree, institution, and performance details.
 SCORING (0-10):
-- 0-3 (POOR): Missing major/degree, unrecognizable institution.
-- 4-6 (AVERAGE): Recognized university but average performance or limited application of learning.
-- 7-8 (STRONG): High GPA, relevant major, recognized institution, or demonstrated application (projects, leadership).
-- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT) with exceptional honors or significant real-world application.
+- 0-2 (POOR): Missing critical details like Degree or Institution name.
+- 3-6 (AVERAGE): Basic details present, may lack some refinements.
+- 7-8 (STRONG): Solid academic record, clear degree/major, recognized institution.
+- 9-10 (EXPERT): Top-tier/Elite (Ivy, MIT, IIT, IIM) with exceptional honors.
 
 ### CERTIFICATIONS EVALUATION:
 Check for industry-recognized providers (AWS, Google, Microsoft, CFA, etc.).
 SCORING (0-5):
-- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer. No evidence the knowledge was applied.
-- 2-3 (AVERAGE): Recognized certification but from a lower-tier provider or missing details.
-- 4 (STRONG): Industry-recognized certification with proper details, or a lesser cert with evidence of practical application.
-- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present and evidence of applied knowledge.
+- 0-1 (POOR): Irrelevant or low-quality certification from unknown issuer.
+- 2-3 (AVERAGE): Recognized certification with basic details present.
+- 4 (STRONG): Industry-recognized certification with proper details.
+- 5 (EXPERT): High-impact, advanced certification from a top-tier provider with all details present.
 
 ### ACHIEVEMENTS EVALUATION:
-- Achievements: Look for real-world impact, recognition, and professional relevance. Impact means demonstrable outcome or value — not just having a number.
+- Look for real-world impact, recognition, and professional relevance.
 SCORING (0-10):
 - Achievements (10pts): up to 10 points based on quality and impact.
 
@@ -73,7 +73,7 @@ Return a single JSON object with the following structure:
 }}
 """
 
-async def analyze_metadata(resume, llm_client: LLMClient):
+async def analyze_metadata(resume, llm_client: LLMClient, target_tier: str = "fresher"):
     """Analyze Education, Certifications, and Achievements in a single LLM call."""
     # Prepare combined data
     edu_data = format_education_data(resume.education) if resume.education else "[]"
@@ -83,7 +83,12 @@ async def analyze_metadata(resume, llm_client: LLMClient):
     # Calculate years of exp for education context
     total_years = resume.total_years_experience or 0
 
+    tier_context = "Fresher (0-2 years) — education and certifications are central. Score them generously for completeness and relevance. Achievements showing initiative and potential are highly valued."
+    if target_tier == "experienced":
+        tier_context = "Experienced (3+ years) — education is background context; experience trumps it. Certifications and achievements should demonstrate advanced, applied expertise."
+
     prompt = f"{METADATA_SYSTEM_PROMPT}\n\n"
+    prompt += f"CANDIDATE TIER: {tier_context}\n\n"
     prompt += f"TOTAL YEARS EXPERIENCE: {total_years}\n\n"
     prompt += f"EDUCATION DATA:\n{edu_data}\n\n"
     prompt += f"CERTIFICATIONS DATA:\n{cert_data}\n\n"
@@ -146,7 +151,7 @@ async def analyze_metadata(resume, llm_client: LLMClient):
             
         # Calculate Achievements score
         ach_count = len(ach_results)
-        ach_score = min(10.0, ach_count * 1.25) if ach_count > 0 else 0.0
+        ach_score = min(10.0, ach_count * 1.5) if ach_count > 0 else 0.0
             
         ach_final = AchievementsAnalysis(
             achievements=ach_results,

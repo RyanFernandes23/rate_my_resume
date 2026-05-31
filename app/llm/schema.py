@@ -11,7 +11,9 @@ class Experience(BaseModel):
 
 
 class Education(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = None  # Original field, will hold institution for backward compatibility
+    degree: Optional[str] = None
+    institution: Optional[str] = None
     score: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None

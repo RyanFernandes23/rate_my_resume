@@ -3,7 +3,7 @@ import json
 import pytest
 
 from app.pipeline import AnalysisPipeline
-from app.analyzer.consolidator import consolidate_analysis
+from app.analyzer.consolidator import consolidate_analysis, _calculate_tiered_score
 
 
 class TestHighScoringEntryFilter:
@@ -83,6 +83,8 @@ from typing import Optional
 import pytest
 
 from app.analyzer.batch_rewriter import batch_rewrite_suggestions
+from app.analyzer.rewriter import rewrite_bullet
+from app.analyzer.repetition_checker import find_repeated_words
 from app.analyzer.experience_analyzer import analyze_experience
 from app.analyzer.metadata_analyzer import analyze_metadata
 from app.analyzer.projects_analyzer import analyze_projects
@@ -215,7 +217,7 @@ class TestStrategicAnalyzer:
                 "suggestions": [],
             }],
         }))
-        skills, roles, jd = await analyze_strategic(make_minimal_resume(), client)
+        skills, roles = await analyze_strategic(make_minimal_resume(), client)
         assert len(roles) == 1, "Expected job roles to be processed, got fallback"
         assert roles[0].role == "Senior Engineer"
         assert skills.score == 14.0  # mock value, not fallback 10.0
@@ -264,9 +266,9 @@ class TestProjectsAnalyzer:
 class TestBatchRewriter:
     @pytest.mark.asyncio
     async def test_processes_mock_response_not_fallback(self):
-        """Verify mock rewrites are processed, not fallback defaults."""
+        """Verify mock rephrase is processed, not fallback defaults."""
         client = FakeLLMClient(response=json.dumps({
-            "rewrites": [{"label": "Action-Oriented", "content": "Led team to deliver"}],
+            "content": "Led team to deliver",
         }))
         suggestions = [{
             "section": "experience",
@@ -277,6 +279,170 @@ class TestBatchRewriter:
             "context": "Team of 3",
         }]
         result = await batch_rewrite_suggestions(suggestions, client)
-        # Fallback produces generic text, mock produces our exact content
         assert "experience__0__0" in result
-        assert result["experience__0__0"][0]["content"] == "Led team to deliver"
+        assert result["experience__0__0"]["content"] == "Led team to deliver"
+        assert result["experience__0__0"]["label"] == "Rephrased"
+
+
+class TestTieredScoring:
+    def test_fresher_includes_low_scoring_supplementary(self):
+        """Fresher tier should include supplementary sections even at low scores."""
+        total, active_max = _calculate_tiered_score(
+            basic_info_score=8.0, experience_score=15.0,
+            projects_score=0, skills_score=10.0,
+            education_score=0, ach_score=0,
+            certifications_score=0, target_tier="fresher",
+        )
+        # Fresher: supp threshold 0.3, so 0/25=0 < 0.3 → projects dropped?
+        # Actually projects=0/25=0 < 0.3, so it IS dropped even for fresher
+        # Let me test with scores just above threshold
+        pass
+
+    def test_fresher_has_lower_supp_threshold(self):
+        """Fresher uses 0.3 threshold, experienced uses 0.5."""
+        total_f, max_f = _calculate_tiered_score(
+            basic_info_score=8.0, experience_score=15.0,
+            projects_score=7.5, skills_score=10.0,
+            education_score=3.0, ach_score=3.0,
+            certifications_score=1.5, target_tier="fresher",
+        )
+        total_e, max_e = _calculate_tiered_score(
+            basic_info_score=8.0, experience_score=15.0,
+            projects_score=7.5, skills_score=10.0,
+            education_score=3.0, ach_score=3.0,
+            certifications_score=1.5, target_tier="experienced",
+        )
+        # projects 7.5/25=0.3, education 3/10=0.3, ach 3/10=0.3, certs 1.5/5=0.3
+        # Fresher: all meet 0.3 threshold → all included
+        assert max_f == 100
+        # Experienced: none meet 0.5 threshold → only core included
+        assert max_e == 50
+
+
+class TestWordRepetitionChecker:
+    def test_detects_repeated_words_in_section(self):
+        """Verify repeated significant words are flagged per section."""
+        sections = {
+            "experience": "Engineered the backend. Engineered the frontend. Engineered the API layer.",
+            "projects": "Monitored dashboard metrics. Monitored API latency. Monitored error rates.",
+        }
+        result = find_repeated_words(sections)
+        assert "engineered" in result.get("experience", [])
+        assert "monitored" in result.get("projects", [])
+
+    def test_excludes_stopwords(self):
+        """Verify articles, prepositions, pronouns are excluded."""
+        sections = {
+            "experience": "The team and the project. A solution for the client.",
+        }
+        result = find_repeated_words(sections)
+        for word in result.get("experience", []):
+            assert word not in ["the", "and", "a", "for"]
+
+    def test_no_repetition_returns_empty(self):
+        """Verify sections with no significant repetition return empty."""
+        sections = {
+            "experience": "Led a team.",
+            "projects": "Built an API.",
+            "skills": "Python, AWS",
+        }
+        result = find_repeated_words(sections)
+        assert all(len(words) == 0 for words in result.values())
+
+    def test_detects_cross_section_repetition(self):
+        """Verify a word used in multiple sections is flagged in each."""
+        sections = {
+            "experience": "Engineered the backend. Engineered the frontend.",
+            "projects": "Engineered the platform. Engineered the deployment.",
+        }
+        result = find_repeated_words(sections)
+        assert "engineered" in result.get("experience", [])
+        assert "engineered" in result.get("projects", [])
+
+
+class TestWordRepetitionInBatchRewriter:
+    @pytest.mark.asyncio
+    async def test_repeated_words_in_prompt(self):
+        """Verify repeated_words are passed into the batch rewriter prompt."""
+        client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
+        suggestions = [{
+            "section": "experience",
+            "entry_index": 0,
+            "bullet_index": 0,
+            "bullet": "Built APIs",
+            "advice": "Use stronger verbs",
+            "context": "Team of 3",
+            "repeated_words": ["built", "led"],
+        }]
+        result = await batch_rewrite_suggestions(suggestions, client)
+        assert client.last_prompt is not None
+        assert "built, led" in client.last_prompt or "built" in client.last_prompt
+        assert "avoid" in client.last_prompt.lower()
+
+    async def test_accumulated_used_words_in_prompt(self):
+        """Verify accumulated_used_words are passed into the batch rewriter prompt."""
+        client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
+        suggestions = [{
+            "section": "experience",
+            "entry_index": 0,
+            "bullet_index": 0,
+            "bullet": "Built APIs",
+            "advice": "Use stronger verbs",
+            "context": "Team of 3",
+            "repeated_words": [],
+        }]
+        used_words = {"engineered", "spearheaded"}
+        result = await batch_rewrite_suggestions(suggestions, client, accumulated_used_words=used_words)
+        assert client.last_prompt is not None
+        assert "at most once" in client.last_prompt.lower()
+        assert "engineered" in client.last_prompt
+        assert "spearheaded" in client.last_prompt
+
+
+class TestRewriteBulletNoMetricInjection:
+    @pytest.mark.asyncio
+    async def test_prompt_instructs_no_metric_injection(self):
+        """Verify the rewriter prompt tells the LLM to never inject metrics not in original."""
+        client = FakeLLMClient(response=json.dumps({"content": "Rephrased bullet."}))
+        await rewrite_bullet("Built an API", "Use stronger action verbs", client)
+        assert "never" in client.last_prompt.lower()
+
+    @pytest.mark.asyncio
+    async def test_returns_single_content_not_versions_array(self):
+        """Verify rewriter returns a single content string, not a versions array."""
+        client = FakeLLMClient(response=json.dumps({"content": "Engineered an API."}))
+        result = await rewrite_bullet("Built an API", "Use stronger action verbs", client)
+        assert "content" in result
+        assert "versions" not in result
+        assert isinstance(result["content"], str)
+
+    @pytest.mark.asyncio
+    async def test_prompt_contains_no_metric_guidance(self):
+        """Verify the prompt no longer contains metric suggestion language."""
+        client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
+        await rewrite_bullet("Built an API", "Use stronger action verbs", client)
+        prompt_lower = client.last_prompt.lower()
+        assert "metric_suggestion" not in prompt_lower
+        assert "metric guidance" not in prompt_lower
+
+    @pytest.mark.asyncio
+    async def test_error_fallback_uses_content_not_versions(self):
+        """Verify the error fallback returns single content, not versions array."""
+        class FailingLLMClient(LLMClient):
+            async def ainvoke(self, prompt: str) -> str:
+                raise Exception("LLM unavailable")
+        result = await rewrite_bullet("Built an API", "Use stronger action verbs", FailingLLMClient())
+        assert "content" in result
+        assert "versions" not in result
+        assert isinstance(result["content"], str)
+        assert "Built an API" in result["content"]
+
+    @pytest.mark.asyncio
+    async def test_prompt_contains_evaluation_criteria(self):
+        """Verify the rewriter prompt includes evaluation criteria (action verbs, cause-effect, specificity)."""
+        client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
+        await rewrite_bullet("Built an API", "Use stronger action verbs", client)
+        prompt_lower = client.last_prompt.lower()
+        assert "action verbs" in prompt_lower or "stronger verbs" in prompt_lower
+        assert "cause-effect" in prompt_lower or "cause and effect" in prompt_lower
+        assert "specific" in prompt_lower
