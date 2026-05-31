@@ -106,6 +106,13 @@ _TEMPLATES = [
         "page_limit": 2,
         "supported_sections": ["Experience", "Education", "Skills", "Projects", "Certifications"],
     },
+    {
+        "id": "jake",
+        "name": "Jake",
+        "thumbnail_url": "/static/templates/jake.jpg",
+        "page_limit": 1,
+        "supported_sections": ["Experience", "Education", "Skills", "Projects", "Technical Skills"],
+    },
 ]
 
 

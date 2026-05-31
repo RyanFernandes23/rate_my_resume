@@ -157,6 +157,15 @@ TEMPLATE_CONFIGS: dict[str, TemplateConfig] = {
         font_size_name=24,
         page_margin_top=55, page_margin_bottom=55,
     ),
+    # Jake Ryan - Single-column centered header, uppercase underlined section headings
+    "jake": TemplateConfig(
+        name="Jake",
+        font_body="Calibri", font_heading="Calibri",
+        color_primary="000000", color_accent="000000",
+        header_align="center", section_style="underline",
+        font_size_name=18, font_size_section=12, font_size_body=11,
+        page_margin_top=40, page_margin_bottom=40,
+    ),
 }
 
 
@@ -302,27 +311,57 @@ def _render_experience_section(doc: Document, experiences: list, rephrase_map: d
         title = exp.get("title") or ""
         start = exp.get("start_date") or ""
         end = exp.get("end_date") or ""
+        location = exp.get("location") or ""
         descriptions = exp.get("descriptions") or []
 
-        # Company / Title / Dates line
-        p = doc.add_paragraph()
-        _set_paragraph_spacing(p, before=2, after=1)
-        if company and title:
-            _add_run(p, f"{company} — {title}", config.font_body, config.font_size_body,
-                     bold=True, color=_hex_to_rgb(config.color_primary))
-        elif company:
-            _add_run(p, company, config.font_body, config.font_size_body,
-                     bold=True)
-        elif title:
-            _add_run(p, title, config.font_body, config.font_size_body,
-                     bold=True)
+        date_str = f"{start} — {end}" if start and end else (start or end)
 
-        if start or end:
-            p2 = doc.add_paragraph()
-            _set_paragraph_spacing(p2, before=0, after=2)
-            date_str = f"{start} — {end}" if start and end else (start or end)
-            _add_run(p2, date_str, config.font_body, config.font_size_body - 1,
-                     color=_hex_to_rgb("666666"))
+        # Use a table for the header line if it's the 'jake' template or similar style
+        if config.name == "Jake":
+            # Header line: Company (Left) | Location (Right)
+            table = doc.add_table(rows=1, cols=2)
+            table.width = Inches(6.5) # Approximate
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            cells = table.rows[0].cells
+            p_left = cells[0].paragraphs[0]
+            _add_run(p_left, company, config.font_body, config.font_size_body, bold=True)
+            
+            p_right = cells[1].paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            _add_run(p_right, location, config.font_body, config.font_size_body)
+
+            # Subheader line: Title (Left) | Dates (Right)
+            table2 = doc.add_table(rows=1, cols=2)
+            table2.width = Inches(6.5)
+            table2.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            cells2 = table2.rows[0].cells
+            p_left2 = cells2[0].paragraphs[0]
+            _add_run(p_left2, title, config.font_body, config.font_size_body, italic=True)
+            
+            p_right2 = cells2[1].paragraphs[0]
+            p_right2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            _add_run(p_right2, date_str, config.font_body, config.font_size_body, italic=True)
+        else:
+            # Company / Title / Dates line
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=2, after=1)
+            if company and title:
+                _add_run(p, f"{company} — {title}", config.font_body, config.font_size_body,
+                         bold=True, color=_hex_to_rgb(config.color_primary))
+            elif company:
+                _add_run(p, company, config.font_body, config.font_size_body,
+                         bold=True)
+            elif title:
+                _add_run(p, title, config.font_body, config.font_size_body,
+                         bold=True)
+
+            if start or end:
+                p2 = doc.add_paragraph()
+                _set_paragraph_spacing(p2, before=0, after=2)
+                _add_run(p2, date_str, config.font_body, config.font_size_body - 1,
+                         color=_hex_to_rgb("666666"))
 
         # Bullet points
         for b_idx, bullet in enumerate(descriptions):
@@ -352,31 +391,77 @@ def _render_education_section(doc: Document, education: list, config: TemplateCo
         end = edu.get("end_date") or ""
         location = edu.get("location") or ""
 
-        p = doc.add_paragraph()
-        _set_paragraph_spacing(p, before=2, after=1)
-        parts = [p for p in [institution, degree] if p]
-        _add_run(p, " — ".join(parts), config.font_body, config.font_size_body,
-                 bold=True, color=_hex_to_rgb(config.color_primary))
+        date_str = f"{start} — {end}" if start and end else (start or end)
 
-        details = [p for p in [start, end] if p]
-        detail_str = f"{' — '.join(details)}" if details else ""
-        if score_val:
-            detail_str = f"{detail_str} | GPA: {score_val}" if detail_str else f"GPA: {score_val}"
-        if detail_str:
-            p2 = doc.add_paragraph()
-            _set_paragraph_spacing(p2, before=0, after=2)
-            _add_run(p2, detail_str, config.font_body, config.font_size_body - 1,
-                     color=_hex_to_rgb("666666"))
+        if config.name == "Jake":
+            # Header line: Institution (Left) | Location (Right)
+            table = doc.add_table(rows=1, cols=2)
+            table.width = Inches(6.5)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            cells = table.rows[0].cells
+            p_left = cells[0].paragraphs[0]
+            _add_run(p_left, institution, config.font_body, config.font_size_body, bold=True)
+            
+            p_right = cells[1].paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            _add_run(p_right, location, config.font_body, config.font_size_body)
+
+            # Subheader line: Degree (Left) | Dates (Right)
+            table2 = doc.add_table(rows=1, cols=2)
+            table2.width = Inches(6.5)
+            table2.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            cells2 = table2.rows[0].cells
+            p_left2 = cells2[0].paragraphs[0]
+            _add_run(p_left2, degree, config.font_body, config.font_size_body, italic=True)
+            
+            p_right2 = cells2[1].paragraphs[0]
+            p_right2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            _add_run(p_right2, date_str, config.font_body, config.font_size_body, italic=True)
+            
+            if score_val:
+                p_score = doc.add_paragraph()
+                _set_paragraph_spacing(p_score, before=0, after=2)
+                _add_run(p_score, f"GPA: {score_val}", config.font_body, config.font_size_body - 1)
+        else:
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=2, after=1)
+            parts = [p for p in [institution, degree] if p]
+            _add_run(p, " — ".join(parts), config.font_body, config.font_size_body,
+                     bold=True, color=_hex_to_rgb(config.color_primary))
+
+            details = [p for p in [start, end] if p]
+            detail_str = f"{' — '.join(details)}" if details else ""
+            if score_val:
+                detail_str = f"{detail_str} | GPA: {score_val}" if detail_str else f"GPA: {score_val}"
+            if detail_str:
+                p2 = doc.add_paragraph()
+                _set_paragraph_spacing(p2, before=0, after=2)
+                _add_run(p2, detail_str, config.font_body, config.font_size_body - 1,
+                         color=_hex_to_rgb("666666"))
 
 
 def _render_skills_section(doc: Document, skills: list, config: TemplateConfig):
     if not skills:
         return
-    _render_section_heading(doc, "Skills", config)
-    p = doc.add_paragraph()
-    _set_paragraph_spacing(p, before=2, after=2)
-    # Display as comma-separated inline
-    _add_run(p, ", ".join(skills), config.font_body, config.font_size_body)
+    _render_section_heading(doc, "Technical Skills" if config.name == "Jake" else "Skills", config)
+    
+    if config.name == "Jake" and all(isinstance(s, dict) for s in skills):
+        for skill_group in skills:
+            category = skill_group.get("category") or skill_group.get("name") or ""
+            items = skill_group.get("items") or []
+            if category and items:
+                p = doc.add_paragraph()
+                _set_paragraph_spacing(p, before=1, after=1)
+                run = _add_run(p, f"{category}: ", config.font_body, config.font_size_body, bold=True)
+                _add_run(p, ", ".join(items), config.font_body, config.font_size_body)
+    else:
+        p = doc.add_paragraph()
+        _set_paragraph_spacing(p, before=2, after=2)
+        # Display as comma-separated inline
+        skill_text = ", ".join(skills) if all(isinstance(s, str) for s in skills) else str(skills)
+        _add_run(p, skill_text, config.font_body, config.font_size_body)
 
 
 def _render_projects_section(doc: Document, projects: list, rephrase_map: dict,
@@ -389,17 +474,40 @@ def _render_projects_section(doc: Document, projects: list, rephrase_map: dict,
         name = proj.get("name") or ""
         descriptions = proj.get("descriptions") or []
         link = proj.get("link") or ""
+        start = proj.get("start_date") or ""
+        end = proj.get("end_date") or ""
+        date_str = f"{start} — {end}" if start and end else (start or end)
 
-        p = doc.add_paragraph()
-        _set_paragraph_spacing(p, before=2, after=1)
-        _add_run(p, name, config.font_body, config.font_size_body,
-                 bold=True, color=_hex_to_rgb(config.color_primary))
+        if config.name == "Jake":
+            # Header line: Name (Left) | Dates (Right)
+            table = doc.add_table(rows=1, cols=2)
+            table.width = Inches(6.5)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            cells = table.rows[0].cells
+            p_left = cells[0].paragraphs[0]
+            _add_run(p_left, name, config.font_body, config.font_size_body, bold=True)
+            
+            p_right = cells[1].paragraphs[0]
+            p_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            _add_run(p_right, date_str, config.font_body, config.font_size_body)
+            
+            if link:
+                p_link = doc.add_paragraph()
+                _set_paragraph_spacing(p_link, before=0, after=2)
+                _add_run(p_link, link, config.font_body, config.font_size_body - 1,
+                         color=_hex_to_rgb("666666"))
+        else:
+            p = doc.add_paragraph()
+            _set_paragraph_spacing(p, before=2, after=1)
+            _add_run(p, name, config.font_body, config.font_size_body,
+                     bold=True, color=_hex_to_rgb(config.color_primary))
 
-        if link:
-            p2 = doc.add_paragraph()
-            _set_paragraph_spacing(p2, before=0, after=1)
-            _add_run(p2, link, config.font_body, config.font_size_body - 1,
-                     color=_hex_to_rgb(config.color_accent))
+            if link:
+                p2 = doc.add_paragraph()
+                _set_paragraph_spacing(p2, before=0, after=1)
+                _add_run(p2, link, config.font_body, config.font_size_body - 1,
+                         color=_hex_to_rgb(config.color_accent))
 
         for b_idx, bullet in enumerate(descriptions):
             key = f"projects__{proj_idx}__{b_idx}"
