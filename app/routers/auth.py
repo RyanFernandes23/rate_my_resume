@@ -101,6 +101,18 @@ async def register(request: Request, user: UserCreate, response: Response):
 
         auth_client = get_client(use_service_key=True)
 
+        resp = auth_client.auth.admin._http_client.get(
+            f"{auth_client.auth.admin._url}/admin/users",
+            params={"filter": user.email, "per_page": 1},
+            headers=auth_client.auth.admin._headers,
+        )
+        existing = resp.json().get("users", [])
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Please sign in instead."
+            )
+
         auth_response = auth_client.auth.sign_up(
             {
                 "email": user.email,
@@ -116,33 +128,32 @@ async def register(request: Request, user: UserCreate, response: Response):
             access_token = auth_response.session.access_token
             refresh_token = auth_response.session.refresh_token
             expires_in = auth_response.session.expires_in or 3600
-        else:
-            try:
-                signin_response = auth_client.auth.sign_in_with_password(
-                    {"email": user.email, "password": user.password}
-                )
-                access_token = signin_response.session.access_token
-                refresh_token = signin_response.session.refresh_token
-                expires_in = signin_response.session.expires_in or 3600
-            except Exception:
-                access_token = ""
-                refresh_token = ""
-                expires_in = 0
 
-        user_id = auth_response.user.id
-        user_email = auth_response.user.email or user.email
-
-        cookie_service = _get_cookie_service()
-        if access_token and refresh_token and expires_in > 0:
+            cookie_service = _get_cookie_service()
             cookie_service.set_auth_cookies(response, access_token, refresh_token, expires_in)
 
-        return AuthResponse(
-            user=UserResponse(id=user_id, email=user_email, name=user.name),
+            return AuthResponse(
+                user=UserResponse(id=auth_response.user.id, email=auth_response.user.email or user.email, name=user.name),
+            )
+
+        raise HTTPException(
+            status_code=202,
+            detail="Please confirm your email address. A confirmation link has been sent to your email."
         )
 
     except AuthApiError as e:
-        logger.error(f"Supabase auth error: {e}")
-        raise HTTPException(status_code=400, detail="Registration failed")
+        logger.error(f"Supabase auth error during registration: {e}")
+        error_str = str(e)
+
+        if "already registered" in error_str.lower():
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Please sign in instead."
+            )
+
+        # Pass through the actual Supabase message for other errors
+        # (e.g. invalid email, rate limited, etc.)
+        raise HTTPException(status_code=400, detail=error_str)
     except HTTPException:
         raise
     except Exception as e:
@@ -183,8 +194,37 @@ async def login(request: Request, login_data: LoginRequest, response: Response):
         )
 
     except AuthApiError as e:
-        logger.error(f"Login error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        logger.error(f"Supabase auth error during login: {e}")
+        error_str = str(e).lower()
+
+        if "email not confirmed" in error_str:
+            raise HTTPException(
+                status_code=401,
+                detail="Please confirm your email before signing in"
+            )
+
+        if "invalid login credentials" in error_str or "invalid grant" in error_str:
+            # Distinguish user-not-found from wrong-password
+            try:
+                user_list = auth_client.auth.admin.list_users(
+                    filter=login_data.email, per_page=1
+                )
+                user_exists = len(user_list.users) > 0
+            except Exception:
+                user_exists = None
+
+            if user_exists is False:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No account found with this email address"
+                )
+
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid email or password"
+            )
+
+        raise HTTPException(status_code=401, detail="Login failed")
     except HTTPException:
         raise
     except Exception as e:
