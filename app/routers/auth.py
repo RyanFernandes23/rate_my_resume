@@ -101,6 +101,18 @@ async def register(request: Request, user: UserCreate, response: Response):
 
         auth_client = get_client(use_service_key=True)
 
+        resp = auth_client.auth.admin._http_client.get(
+            f"{auth_client.auth.admin._url}/admin/users",
+            params={"filter": user.email, "per_page": 1},
+            headers=auth_client.auth.admin._headers,
+        )
+        existing = resp.json().get("users", [])
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Please sign in instead."
+            )
+
         auth_response = auth_client.auth.sign_up(
             {
                 "email": user.email,
@@ -131,12 +143,17 @@ async def register(request: Request, user: UserCreate, response: Response):
 
     except AuthApiError as e:
         logger.error(f"Supabase auth error during registration: {e}")
-        if "already registered" in str(e).lower():
+        error_str = str(e)
+
+        if "already registered" in error_str.lower():
             raise HTTPException(
                 status_code=409,
-                detail="An account with this email already exists"
+                detail="An account with this email already exists. Please sign in instead."
             )
-        raise HTTPException(status_code=400, detail="Registration failed")
+
+        # Pass through the actual Supabase message for other errors
+        # (e.g. invalid email, rate limited, etc.)
+        raise HTTPException(status_code=400, detail=error_str)
     except HTTPException:
         raise
     except Exception as e:
