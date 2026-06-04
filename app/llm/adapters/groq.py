@@ -8,10 +8,10 @@ load_dotenv()
 
 class GroqAdapter:
     def __init__(self, model: str = None) -> None:
-        model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        model = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         self._llm = ChatGroq(
             model=model,
-            temperature=0.2,
+            temperature=0.1,
             max_retries=3,
             max_tokens=8192,
         )
