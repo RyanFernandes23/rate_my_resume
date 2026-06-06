@@ -22,24 +22,24 @@ razorpay_client = razorpay.Client(
 
 CREDIT_PACKS = [
     {
-        "id": "basic",
-        "label": "Basic",
+        "id": "single",
+        "label": "Single Credit",
         "credits": 1,
         "amount_usd": 199,
         "best_value": False,
     },
     {
-        "id": "pro",
-        "label": "Pro",
+        "id": "starter",
+        "label": "Starter Pack",
         "credits": 5,
-        "amount_usd": 799,
+        "amount_usd": 699,
         "best_value": True,
     },
     {
-        "id": "premium",
-        "label": "Premium",
+        "id": "popular",
+        "label": "Popular Pack",
         "credits": 10,
-        "amount_usd": 1299,
+        "amount_usd": 1199,
         "best_value": False,
     },
 ]
