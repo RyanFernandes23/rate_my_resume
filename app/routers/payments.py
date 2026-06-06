@@ -22,24 +22,24 @@ razorpay_client = razorpay.Client(
 
 CREDIT_PACKS = [
     {
-        "id": "single",
-        "label": "Single Credit",
+        "id": "basic",
+        "label": "Basic",
         "credits": 1,
-        "amount_inr": 10,
+        "amount_usd": 199,
         "best_value": False,
     },
     {
-        "id": "starter",
-        "label": "Starter Pack",
+        "id": "pro",
+        "label": "Pro",
         "credits": 5,
-        "amount_inr": 50,
+        "amount_usd": 799,
         "best_value": True,
     },
     {
-        "id": "popular",
-        "label": "Popular Pack",
+        "id": "premium",
+        "label": "Premium",
         "credits": 10,
-        "amount_inr": 100,
+        "amount_usd": 1299,
         "best_value": False,
     },
 ]
@@ -51,7 +51,7 @@ class CreateOrderRequest(BaseModel):
 
 class CreateOrderResponse(BaseModel):
     order_id: str
-    amount_inr: int
+    amount_usd: int
     currency: str
     key_id: str
 
@@ -83,8 +83,8 @@ async def create_order(
         logger.info(f"Creating order for user: {_mask_id(user_id)}, pack: {request.pack_id}")
         order = razorpay_client.order.create(
             {
-                "amount": pack["amount_inr"] * 100,
-                "currency": "INR",
+                "amount": pack["amount_usd"],
+                "currency": "USD",
                 "receipt": f"{user_id[:8]}_{int(datetime.now().timestamp())}",
             }
         )
@@ -94,7 +94,7 @@ async def create_order(
             {
                 "user_id": user_id,
                 "razorpay_order_id": order["id"],
-                "amount_inr": pack["amount_inr"],
+                "amount_usd": pack["amount_usd"],
                 "credits_to_award": pack["credits"],
                 "status": "created",
             }
@@ -103,8 +103,8 @@ async def create_order(
 
         return CreateOrderResponse(
             order_id=order["id"],
-            amount_inr=pack["amount_inr"],
-            currency="INR",
+            amount_usd=pack["amount_usd"],
+            currency="USD",
             key_id=settings.razorpay_key_id,
         )
     except Exception as e:
