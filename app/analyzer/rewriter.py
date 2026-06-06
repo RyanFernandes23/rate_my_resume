@@ -22,8 +22,9 @@ async def rewrite_bullet(bullet: str, suggestion: str, llm_client: LLMClient) ->
             json_str = text
 
         json_str = json_str.replace('\n', ' ').replace('\r', '')
-        
-        return json.loads(json_str)
+        result = json.loads(json_str)
+
+        return result
     except Exception as e:
         return {
             "error": str(e),

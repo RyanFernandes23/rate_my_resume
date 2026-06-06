@@ -268,7 +268,7 @@ class TestBatchRewriter:
     async def test_processes_mock_response_not_fallback(self):
         """Verify mock rephrase is processed, not fallback defaults."""
         client = FakeLLMClient(response=json.dumps({
-            "content": "Led team to deliver",
+            "b0": "Led team to deliver",
         }))
         suggestions = [{
             "section": "experience",
@@ -379,9 +379,10 @@ class TestWordRepetitionInBatchRewriter:
         assert "built, led" in client.last_prompt or "built" in client.last_prompt
         assert "avoid" in client.last_prompt.lower()
 
+    @pytest.mark.asyncio
     async def test_accumulated_used_words_in_prompt(self):
         """Verify accumulated_used_words are passed into the batch rewriter prompt."""
-        client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
+        client = FakeLLMClient(response=json.dumps({"b0": "Rephrased."}))
         suggestions = [{
             "section": "experience",
             "entry_index": 0,
@@ -394,9 +395,9 @@ class TestWordRepetitionInBatchRewriter:
         used_words = {"engineered", "spearheaded"}
         result = await batch_rewrite_suggestions(suggestions, client, accumulated_used_words=used_words)
         assert client.last_prompt is not None
-        assert "at most once" in client.last_prompt.lower()
         assert "engineered" in client.last_prompt
         assert "spearheaded" in client.last_prompt
+        assert "avoid" in client.last_prompt.lower()
 
 
 class TestRewriteBulletNoMetricInjection:
@@ -443,6 +444,37 @@ class TestRewriteBulletNoMetricInjection:
         client = FakeLLMClient(response=json.dumps({"content": "Rephrased."}))
         await rewrite_bullet("Built an API", "Use stronger action verbs", client)
         prompt_lower = client.last_prompt.lower()
-        assert "action verbs" in prompt_lower or "stronger verbs" in prompt_lower
+        assert "natural language" in prompt_lower or "real person" in prompt_lower
         assert "cause-effect" in prompt_lower or "cause and effect" in prompt_lower
         assert "specific" in prompt_lower
+
+
+class TestRewriteEngineNoCorporateLanguage:
+    """Tests that the rewrite engine no longer produces corporate thesaurus language."""
+
+    def test_batch_rewriter_prompt_excludes_corporate_verbs(self):
+        """Verify the batch prompt does not suggest orchestrated/spearheaded/architected as preferred verbs."""
+        from app.analyzer.prompts.batch_rewriter_prompts import BATCH_REWRITER_PROMPT
+        lower = BATCH_REWRITER_PROMPT.lower()
+        # These should NOT appear as recommended verbs
+        assert "orchestrated" not in lower or "never use these corporate filler words: orchestrated" in lower
+        # The prompt should have the banned list, not a recommended list
+        assert "never use these corporate filler words" in lower
+
+    def test_single_rewriter_prompt_excludes_corporate_verbs(self):
+        """Verify the single-bullet prompt does not suggest orchestrated/spearheaded as preferred verbs."""
+        from app.analyzer.prompts.rewriter_prompts import BASE_REWRITER_PROMPT
+        lower = BASE_REWRITER_PROMPT.lower()
+        assert "never use these corporate filler words" in lower
+
+    def test_batch_prompt_has_natural_language_examples(self):
+        """Verify the batch prompt includes bad vs good examples."""
+        from app.analyzer.prompts.batch_rewriter_prompts import BATCH_REWRITER_PROMPT
+        assert "BAD vs GOOD examples" in BATCH_REWRITER_PROMPT
+        assert "GOOD:" in BATCH_REWRITER_PROMPT
+        assert "BAD:" in BATCH_REWRITER_PROMPT
+
+    def test_single_prompt_has_natural_language_examples(self):
+        """Verify the single-bullet prompt includes bad vs good examples."""
+        from app.analyzer.prompts.rewriter_prompts import BASE_REWRITER_PROMPT
+        assert "BAD vs GOOD examples" in BASE_REWRITER_PROMPT
