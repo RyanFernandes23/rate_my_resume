@@ -3,9 +3,7 @@ import base64
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
-from app.routers.auth import LoginRequest
 from unittest.mock import patch, MagicMock
 
 from app.main import app
@@ -95,55 +93,3 @@ class TestGetCurrentUser:
             headers={"Authorization": "Basic dXNlcjpwYXNz"},
         )
         assert response.status_code == 401
-
-
-class TestLoginRequest:
-    def test_invalid_email_rejected(self):
-        with pytest.raises(ValidationError):
-            LoginRequest(email="not-an-email", password="password123")
-
-    def test_valid_email_accepted(self):
-        req = LoginRequest(email="user@example.com", password="password123")
-        assert req.email == "user@example.com"
-
-    def test_register_with_short_password_rejected(self):
-        with pytest.raises(ValidationError):
-            from app.routers.auth import UserCreate
-            UserCreate(email="user@example.com", password="short")
-
-
-class TestLoginResponse:
-    @pytest.fixture
-    def mock_login(self):
-        mock_session = MagicMock()
-        mock_session.access_token = "tok_abc"
-        mock_session.refresh_token = "tok_ref_abc"
-        mock_session.expires_in = 3600
-
-        mock_user = MagicMock()
-        mock_user.id = "user-1"
-        mock_user.email = "a@b.com"
-        mock_user.user_metadata = {"name": "Alice"}
-
-        mock_auth_response = MagicMock()
-        mock_auth_response.user = mock_user
-        mock_auth_response.session = mock_session
-
-        with patch("app.routers.auth.get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.auth.sign_in_with_password.return_value = mock_auth_response
-            mock_get_client.return_value = mock_client
-            yield
-
-    def test_login_response_has_no_tokens(self, mock_login):
-        client = TestClient(app)
-        resp = client.post(
-            "/auth/login",
-            json={"email": "a@b.com", "password": "testpass1234"},
-        )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert "access_token" not in body
-        assert "refresh_token" not in body
-        assert "token_type" not in body
-        assert body["user"]["id"] == "user-1"

@@ -6,7 +6,7 @@ class PaymentRepository(Protocol):
         self,
         user_id: str,
         razorpay_order_id: str,
-        amount_usd: int,
+        amount_inr: int,
         credits_to_award: int,
     ) -> None:
         ...
@@ -33,14 +33,14 @@ class SupabasePaymentRepository:
         self,
         user_id: str,
         razorpay_order_id: str,
-        amount_usd: int,
+        amount_inr: int,
         credits_to_award: int,
     ) -> None:
         self._client.table("payment_orders").insert(
             {
                 "user_id": user_id,
                 "razorpay_order_id": razorpay_order_id,
-                "amount_usd": amount_usd,
+                "amount_inr": amount_inr,
                 "credits_to_award": credits_to_award,
                 "status": "created",
             }
@@ -83,13 +83,13 @@ class InMemoryPaymentRepository:
         self,
         user_id: str,
         razorpay_order_id: str,
-        amount_usd: int,
+        amount_inr: int,
         credits_to_award: int,
     ) -> None:
         self._orders[razorpay_order_id] = {
             "razorpay_order_id": razorpay_order_id,
             "user_id": user_id,
-            "amount_usd": amount_usd,
+            "amount_inr": amount_inr,
             "credits_to_award": credits_to_award,
             "status": "created",
         }

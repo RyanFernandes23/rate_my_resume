@@ -25,21 +25,21 @@ CREDIT_PACKS = [
         "id": "single",
         "label": "Single Credit",
         "credits": 1,
-        "amount_usd": 199,
+        "amount_inr": 1000,  # ₹10
         "best_value": False,
     },
     {
         "id": "starter",
         "label": "Starter Pack",
         "credits": 5,
-        "amount_usd": 699,
+        "amount_inr": 4000,  # ₹40 (20% off ₹50)
         "best_value": True,
     },
     {
         "id": "popular",
         "label": "Popular Pack",
         "credits": 10,
-        "amount_usd": 1199,
+        "amount_inr": 7000,  # ₹70 (30% off ₹100)
         "best_value": False,
     },
 ]
@@ -51,7 +51,7 @@ class CreateOrderRequest(BaseModel):
 
 class CreateOrderResponse(BaseModel):
     order_id: str
-    amount_usd: int
+    amount_inr: int
     currency: str
     key_id: str
 
@@ -83,8 +83,8 @@ async def create_order(
         logger.info(f"Creating order for user: {_mask_id(user_id)}, pack: {request.pack_id}")
         order = razorpay_client.order.create(
             {
-                "amount": pack["amount_usd"],
-                "currency": "USD",
+                "amount": pack["amount_inr"],
+                "currency": "INR",
                 "receipt": f"{user_id[:8]}_{int(datetime.now().timestamp())}",
             }
         )
@@ -94,7 +94,7 @@ async def create_order(
             {
                 "user_id": user_id,
                 "razorpay_order_id": order["id"],
-                "amount_usd": pack["amount_usd"],
+                "amount_inr": pack["amount_inr"],
                 "credits_to_award": pack["credits"],
                 "status": "created",
             }
@@ -103,8 +103,8 @@ async def create_order(
 
         return CreateOrderResponse(
             order_id=order["id"],
-            amount_usd=pack["amount_usd"],
-            currency="USD",
+            amount_inr=pack["amount_inr"],
+            currency="INR",
             key_id=settings.razorpay_key_id,
         )
     except Exception as e:
